@@ -625,4 +625,4 @@ if __name__ == '__main__':
                             help='Enable train mode')
     args = parser.parse_args()
 
-    sys.exit(main(*args))
+    sys.exit(main(test_mode=args.test_mode))
