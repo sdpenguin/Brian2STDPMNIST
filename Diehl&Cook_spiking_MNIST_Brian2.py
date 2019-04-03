@@ -16,62 +16,22 @@ https://github.com/bamford/Brian2STDPMNIST
 
 import numpy as np
 import matplotlib.cm as cmap
-import time
-import os.path
-import scipy
-import pickle as pickle
-from struct import unpack
 from brian2 import *
 import brian2 as b2
 from brian2tools import *
-
-# specify the location of the MNIST data
-MNIST_data_path = ''
+from keras.datasets import mnist
 
 #------------------------------------------------------------------------------
 # functions
 #------------------------------------------------------------------------------
 
 
-def get_labeled_data(picklename, bTrain=True):
-    """Read input-vector (image) and target class (label, 0-9) and return
-       it as list of tuples.
-    """
-    if os.path.isfile('%s.pickle' % picklename):
-        data = pickle.load(open('%s.pickle' % picklename))
-    else:
-        # Open the images with gzip in read binary mode
-        if bTrain:
-            images = open(MNIST_data_path + 'train-images.idx3-ubyte', 'rb')
-            labels = open(MNIST_data_path + 'train-labels.idx1-ubyte', 'rb')
-        else:
-            images = open(MNIST_data_path + 't10k-images.idx3-ubyte', 'rb')
-            labels = open(MNIST_data_path + 't10k-labels.idx1-ubyte', 'rb')
-        # Get metadata for images
-        images.read(4)  # skip the magic_number
-        number_of_images = unpack('>I', images.read(4))[0]
-        rows = unpack('>I', images.read(4))[0]
-        cols = unpack('>I', images.read(4))[0]
-        # Get metadata for labels
-        labels.read(4)  # skip the magic_number
-        N = unpack('>I', labels.read(4))[0]
-
-        if number_of_images != N:
-            raise Exception(
-                'number of labels did not match the number of images')
-        # Get the data
-        x = np.zeros((N, rows, cols), dtype=np.uint8)  # Initialize numpy array
-        y = np.zeros((N, 1), dtype=np.uint8)  # Initialize numpy array
-        for i in range(N):
-            if i % 1000 == 0:
-                print(("i: %i" % i))
-            x[i] = [[unpack('>B', images.read(1))[0] for unused_col in range(
-                cols)] for unused_row in range(rows)]
-            y[i] = unpack('>B', labels.read(1))[0]
-
-        data = {'x': x, 'y': y, 'rows': rows, 'cols': cols}
-        pickle.dump(data, open("%s.pickle" % picklename, "wb"))
-    return data
+def get_labeled_data():
+    """Get the MNIST data"""
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    training = {'x': x_train, 'y': y_train}
+    testing = {'x': x_test, 'y': y_test}
+    return training, testing
 
 
 def get_matrix_from_file(fileName):
@@ -227,18 +187,8 @@ def get_new_assignments(result_monitor, input_numbers):
 
 
 def main(test_mode=True):
-    #-------------------------------------------------------------------------
     # load MNIST
-    #-------------------------------------------------------------------------
-    start = time.time()
-    training = get_labeled_data(MNIST_data_path + 'training')
-    end = time.time()
-    print('time needed to load training set:', end - start)
-
-    start = time.time()
-    testing = get_labeled_data(MNIST_data_path + 'testing', bTrain=False)
-    end = time.time()
-    print('time needed to load test set:', end - start)
+    training, testing = get_labeled_data()
 
     #-------------------------------------------------------------------------
     # set parameters and equations
@@ -519,9 +469,9 @@ def main(test_mode=True):
         else:
             result_monitor[j % update_interval, :] = current_spike_count
             if test_mode and use_testing_set:
-                input_numbers[j] = testing['y'][j % 10000][0]
+                input_numbers[j] = testing['y'][j % 10000]
             else:
-                input_numbers[j] = training['y'][j % 60000][0]
+                input_numbers[j] = training['y'][j % 60000]
             outputNumbers[j, :] = get_recognized_number_ranking(
                 assignments, result_monitor[j % update_interval, :])
             if j % 100 == 0 and j > 0:
