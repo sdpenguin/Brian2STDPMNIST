@@ -1,8 +1,17 @@
 #!/bin/env python
 '''
-Created on 15.12.2014
+Original Python2/Brian1 version created by Peter U. Diehl
+on 2014-12-15, GitHub updated 2015-08-07
+https://github.com/peter-u-diehl/stdp-mnist
 
-@author: Peter U. Diehl
+Brian2 version created by Xu Zhang
+GitHub updated 2016-09-13
+https://github.com/zxzhijia/Brian2STDPMNIST
+
+This version created by Steven P. Bamford
+https://github.com/bamford/Brian2STDPMNIST
+
+@author: Steven P. Bamford
 '''
 
 import numpy as np
