@@ -32,6 +32,7 @@ from scipy import sparse
 import brian2 as b2
 import brian2tools as b2t
 from keras.datasets import mnist
+import pickle
 
 
 class config:
@@ -58,21 +59,41 @@ def get_matrix_from_file(filename, shape=None):
     return arr
 
 
+def load_connections(connName, random=True):
+    if random:
+        path = config.random_weight_path
+    else:
+        path = config.weight_path
+    filename = os.path.join(config.data_path, path,
+                            '{}{}.npy'.format(connName, config.ending))
+    return get_matrix_from_file(filename)
+
+
 def save_connections(connections):
     log.info('Saving connections')
     for connName in config.save_conns:
         conn = connections[connName]
         connListSparse = list(zip(conn.i, conn.j, conn.w))
-        out = os.path.join(config.data_path,
-                           'weights/{}{}'.format(connName, config.ending))
-        np.save(out, connListSparse)
+        filename = os.path.join(config.data_path, config.weight_path,
+                                '{}{}'.format(connName, config.ending))
+        np.save(filename, connListSparse)
+
+
+def load_theta(population_name):
+    log.info('Loading theta for population {}'.format(population_name))
+    filename = os.path.join(config.data_path, config.weight_path,
+                            'theta_{}{}.npy'.format(population_name,
+                                                    config.ending))
+    return np.load(filename) * b2.volt
 
 
 def save_theta(population_names, neuron_groups):
     log.info('Saving theta')
     for pop_name in population_names:
-        np.save(config.data_path + 'weights/theta_' + pop_name +
-                config.ending, neuron_groups[pop_name + 'e'].theta)
+        filename = os.path.join(config.data_path, config.weight_path,
+                                'theta_{}{}'.format(pop_name,
+                                                    config.ending))
+        np.save(filename, neuron_groups[pop_name + 'e'].theta)
 
 
 def normalize_weights(connections, weight):
@@ -108,23 +129,24 @@ def get_2d_input_weights(connections):
     return rearranged_weights
 
 
-def plot_2d_input_weights(max_weight=1.0):
+def create_2d_input_weights_plot(connections, max_weight=1.0):
     name = 'XeAe'
-    weights = get_2d_input_weights()
+    weights = get_2d_input_weights(connections)
     fig, ax = b2.subplots(figsize=(18, 18))
     monitor = ax.imshow(weights, interpolation="nearest", vmin=0,
                         vmax=max_weight, cmap=cmap.get_cmap('hot_r'))
     b2.colorbar(monitor)
     b2.title('weights of connection' + name)
+    b2.tight_layout()
     return monitor
 
 
-def update_2d_input_weights_plot(monitor):
+def update_2d_input_weights_plot(monitor, connections):
     log.info('Updating 2d input weights plot')
-    weights = get_2d_input_weights()
+    weights = get_2d_input_weights(connections)
     monitor.set_array(weights)
     fig = monitor.axes.figure
-    fig.save('figures/input_weights.pdf')
+    fig.savefig('figures/input_weights.pdf')
 
 
 def get_current_performance(pred_ranking, labels):
@@ -134,13 +156,14 @@ def get_current_performance(pred_ranking, labels):
     return 100 * correct.mean()
 
 
-def plot_performance():
+def create_performance_plot():
     fig, ax = b2.subplots(figsize=(5, 5))
     monitor, = ax.plot([])
     ax.set_xlabel('time step')
     ax.set_ylabel('accuracy')
     ax.set_ylim(ymax=100)
     ax.set_title('Classification performance')
+    b2.tight_layout()
     return monitor
 
 
@@ -152,7 +175,7 @@ def update_performance_plot(monitor, current_step, pred_ranking, labels):
     performance.append(current_perf)
     monitor.set_data(timestep, performance)
     fig = monitor.axes.figure
-    fig.save('figures/performance.pdf')
+    fig.savefig('figures/performance.pdf')
     return performance
 
 
@@ -190,18 +213,24 @@ def main(test_mode=True):
     # configuration
     np.random.seed(0)
     config.data_path = './'
+    config.random_weight_path = 'random/'
+    config.weight_path = 'weights/'
     if test_mode:
-        weight_path = config.data_path + 'weights/'
+        random_weights = False
         data = testing
-        num_epochs = 1
-        do_plot_performance = False
+        num_epochs = 0.001  #1
+        plot_performance = False
+        plot_weights = False
         ee_STDP_on = False
     else:
-        weight_path = config.data_path + 'random/'
+        random_weights = True
         data = training
-        num_epochs = 3
-        do_plot_performance = True
+        num_epochs = 0.01  #3
+        plot_performance = True
+        plot_weights = True
         ee_STDP_on = True
+
+    min_spike_count = 5
 
     record_spikes = True
 
@@ -209,13 +238,12 @@ def main(test_mode=True):
     weight_update_interval = 100
     save_connections_interval = 10000
 
-    num_examples = len(data) * num_epochs
+    num_examples = int(len(data['y']) * num_epochs)
     n_input = data['x'][0].size
 
     #-------------------------------------------------------------------------
     # set parameters and equations
     #-------------------------------------------------------------------------
-
     n_e = 400
     n_i = n_e
 
@@ -236,8 +264,8 @@ def main(test_mode=True):
     population_names = ['A']
     input_connection_names = ['XA']
     config.save_conns = ['XeAe']
-    input_conn_names = ['ee_input']
-    recurrent_conn_names = ['ei', 'ie']
+    input_conntype_names = ['ee_input']
+    recurrent_conntype_names = ['ei', 'ie']
 
     weight = {}
     weight['ee_input'] = 78.
@@ -310,78 +338,82 @@ def main(test_mode=True):
     spike_counters = {}
     result_monitor = np.zeros((config.update_interval, n_e))
 
-    neuron_groups['e'] = b2.NeuronGroup(n_e * len(population_names), neuron_eqs_e,
-                                        threshold=v_thresh_e_str, refractory=refrac_e, reset=scr_e, method='euler')
-    neuron_groups['i'] = b2.NeuronGroup(n_i * len(population_names), neuron_eqs_i,
-                                        threshold=v_thresh_i_str, refractory=refrac_i, reset=v_reset_i_str, method='euler')
+    neuron_groups['e'] = b2.NeuronGroup(n_e * len(population_names),
+                                        neuron_eqs_e,
+                                        threshold=v_thresh_e_str,
+                                        refractory=refrac_e,
+                                        reset=scr_e,
+                                        method='euler')
+    neuron_groups['i'] = b2.NeuronGroup(n_i * len(population_names),
+                                        neuron_eqs_i,
+                                        threshold=v_thresh_i_str,
+                                        refractory=refrac_i,
+                                        reset=v_reset_i_str,
+                                        method='euler')
 
     #-------------------------------------------------------------------------
     # create network population and recurrent connections
     #-------------------------------------------------------------------------
     for subgroup_n, name in enumerate(population_names):
         log.info(f'Creating neuron group {name}')
+        subpop_e = name + 'e'
+        subpop_i = name + 'i'
+        nge = neuron_groups[subpop_e] = neuron_groups['e'][
+            subgroup_n * n_e:(subgroup_n + 1) * n_e]
+        ngi = neuron_groups[subpop_i] = neuron_groups['i'][
+            subgroup_n * n_i:(subgroup_n + 1) * n_i]
 
-        neuron_groups[name + 'e'] = neuron_groups['e'][subgroup_n *
-                                                       n_e:(subgroup_n + 1) * n_e]
-        neuron_groups[name + 'i'] = neuron_groups['i'][subgroup_n *
-                                                       n_i:(subgroup_n + 1) * n_e]
+        nge.v = v_rest_e - 40. * b2.mV
+        ngi.v = v_rest_i - 40. * b2.mV
 
-        neuron_groups[name + 'e'].v = v_rest_e - 40. * b2.mV
-        neuron_groups[name + 'i'].v = v_rest_i - 40. * b2.mV
-        if test_mode or weight_path[-8:] == 'weights/':
-            neuron_groups['e'].theta = np.load(
-                weight_path + 'theta_' + name + config.ending + '.npy') * b2.volt
+        if config.weight_path[-8:] == 'weights/':
+            neuron_groups['e'].theta = load_theta(name)
         else:
-            neuron_groups['e'].theta = np.ones((n_e)) * 20.0 * b2.mV
+            neuron_groups['e'].theta = np.ones(n_e) * 20.0 * b2.mV
 
         log.info(f'Creating recurrent connections')
-        for conn_type in recurrent_conn_names:
+        for conn_type in recurrent_conntype_names:
             connName = name + conn_type[0] + name + conn_type[1]
-            weightMatrix = get_matrix_from_file(
-                weight_path + '../random/' + connName + config.ending + '.npy')
+            weightMatrix = load_connections(connName, random=True)
             model = 'w : 1'
             pre = 'g%s_post += w' % conn_type[0]
             post = ''
             if ee_STDP_on:
-                if 'ee' in recurrent_conn_names:
+                if 'ee' in recurrent_conntype_names:
                     model += eqs_stdp_ee
                     pre += '; ' + eqs_stdp_pre_ee
                     post = eqs_stdp_post_ee
-            connections[connName] = b2.Synapses(neuron_groups[connName[0:2]], neuron_groups[connName[2:4]],
-                                                model=model, on_pre=pre, on_post=post)
-            connections[connName].connect()  # all-to-all connection
-            connections[connName].w = weightMatrix[connections[connName].i,
-                                                   connections[connName].j]
+            conn = connections[connName] = b2.Synapses(neuron_groups[connName[:2]],
+                                                       neuron_groups[connName[2:]],
+                                                       model=model,
+                                                       on_pre=pre,
+                                                       on_post=post)
+            conn.connect()  # all-to-all connection
+            conn.w = weightMatrix[conn.i, conn.j]
 
         log.info(f'Creating monitors for {name}')
-        rate_monitors[name +
-                      'e'] = b2.PopulationRateMonitor(neuron_groups[name + 'e'])
-        rate_monitors[name +
-                      'i'] = b2.PopulationRateMonitor(neuron_groups[name + 'i'])
-        spike_counters[name + 'e'] = b2.SpikeMonitor(neuron_groups[name + 'e'])
+        rate_monitors[subpop_e] = b2.PopulationRateMonitor(nge)
+        rate_monitors[subpop_i] = b2.PopulationRateMonitor(ngi)
+        spike_counters[subpop_e] = b2.SpikeMonitor(nge)
 
         if record_spikes:
-            spike_monitors[name +
-                           'e'] = b2.SpikeMonitor(neuron_groups[name + 'e'])
-            spike_monitors[name +
-                           'i'] = b2.SpikeMonitor(neuron_groups[name + 'i'])
+            spike_monitors[subpop_e] = b2.SpikeMonitor(nge)
+            spike_monitors[subpop_i] = b2.SpikeMonitor(ngi)
 
     #-------------------------------------------------------------------------
     # create input population and connections from input populations
     #-------------------------------------------------------------------------
-    pop_values = [0, 0, 0]
     for i, name in enumerate(input_population_names):
-        input_groups[name + 'e'] = b2.PoissonGroup(n_input, 0 * b2.Hz)
-        rate_monitors[name +
-                      'e'] = b2.PopulationRateMonitor(input_groups[name + 'e'])
+        subpop_e = name + 'e'
+        input_groups[subpop_e] = b2.PoissonGroup(n_input, 0 * b2.Hz)
+        rate_monitors[subpop_e] = b2.PopulationRateMonitor(input_groups[subpop_e])
 
     for name in input_connection_names:
         log.info(f'Creating connections between {name[0]} and {name[1]}')
-        for connType in input_conn_names:
-            log.debug(f'connType {connType} of {input_conn_names}')
+        for connType in input_conntype_names:
+            log.debug(f'connType {connType} of {input_conntype_names}')
             connName = name[0] + connType[0] + name[1] + connType[1]
-            weightMatrix = get_matrix_from_file(
-                weight_path + connName + config.ending + '.npy')
+            weightMatrix = load_connections(connName, random=random_weights)
             model = 'w : 1'
             pre = 'g%s_post += w' % connType[0]
             post = ''
@@ -391,15 +423,17 @@ def main(test_mode=True):
                 pre += '; ' + eqs_stdp_pre_ee
                 post = eqs_stdp_post_ee
 
-            connections[connName] = b2.Synapses(input_groups[connName[0:2]], neuron_groups[connName[2:4]],
-                                                model=model, on_pre=pre, on_post=post)
-            connections[connName].connect()  # all-to-all connection
+            conn = connections[connName] = b2.Synapses(input_groups[connName[:2]],
+                                                       neuron_groups[connName[2:]],
+                                                       model=model,
+                                                       on_pre=pre,
+                                                       on_post=post)
+            conn.connect()  # all-to-all connection
             minDelay = delay[connType][0]
             maxDelay = delay[connType][1]
             deltaDelay = maxDelay - minDelay
-            connections[connName].delay = 'minDelay + rand() * deltaDelay'
-            connections[connName].w = weightMatrix[connections[connName].i,
-                                                   connections[connName].j]
+            conn.delay = 'minDelay + rand() * deltaDelay'
+            conn.w = weightMatrix[conn.i, conn.j]
 
     #-------------------------------------------------------------------------
     # run the simulation and set inputs
@@ -415,36 +449,29 @@ def main(test_mode=True):
     assignments = np.zeros(n_e)
     input_labels = [0] * num_examples
     predicted_class_ranking = np.zeros((num_examples, config.num_classes))
-    if not test_mode:
-        input_weight_monitor = plot_2d_input_weights(wmax_ee)
-    if do_plot_performance:
-        performance_monitor = plot_performance()
+    if plot_weights:
+        input_weight_monitor = create_2d_input_weights_plot(connections, wmax_ee)
+    if plot_performance:
+        performance_monitor = create_performance_plot()
     for i, name in enumerate(input_population_names):
         input_groups[name + 'e'].rates = 0 * b2.Hz
     log.info('Starting simulations')
     net.run(0 * b2.second)
     j = 0
     while j < (int(num_examples)):
-        if test_mode:
-            if use_testing_set:
-                spike_rates = testing['x'][j % 10000, :, :].reshape(
-                    (n_input)) / 8. * input_intensity
-            else:
-                spike_rates = training['x'][j % 60000, :, :].reshape(
-                    (n_input)) / 8. * input_intensity
-        else:
+        log.debug(f'run number {j+1} of {int(num_examples)}')
+        if not test_mode:
             normalize_weights(connections, weight)
-            spike_rates = training['x'][j % 60000, :, :].reshape(
-                (n_input)) / 8. * input_intensity
+        spike_rates = data['x'][j % len(data)].reshape(n_input) / 8
+        spike_rates *= input_intensity
         input_groups['Xe'].rates = spike_rates * b2.Hz
-        log.info(f'run number {j+1} of {int(num_examples)}')
         net.run(single_example_time, report=None)
 
         if j % config.update_interval == 0 and j > 0:
             assignments = get_new_assignments(
                 result_monitor, input_labels[j - config.update_interval: j])
-        if j % weight_update_interval == 0 and not test_mode:
-            update_2d_input_weights_plot(input_weight_monitor)
+        if j % weight_update_interval == 0 and plot_weights:
+            update_2d_input_weights_plot(input_weight_monitor, connections)
         if j % save_connections_interval == 0 and j > 0 and not test_mode:
             save_connections(connections)
             save_theta(population_names, neuron_groups)
@@ -452,26 +479,24 @@ def main(test_mode=True):
         current_spike_count = np.asarray(
             spike_counters['Ae'].count[:]) - previous_spike_count
         previous_spike_count = np.copy(spike_counters['Ae'].count[:])
-        if np.sum(current_spike_count) < 5:
+        if np.sum(current_spike_count) < min_spike_count:
             input_intensity += 1
             for i, name in enumerate(input_population_names):
                 input_groups[name + 'e'].rates = 0 * b2.Hz
             net.run(resting_time)
         else:
             result_monitor[j % config.update_interval, :] = current_spike_count
-            if test_mode and use_testing_set:
-                input_labels[j] = testing['y'][j % 10000]
-            else:
-                input_labels[j] = training['y'][j % 60000]
+            input_labels[j] = data['y'][j % len(data)]
             predicted_class_ranking[j, :] = get_predicted_class_ranking(
                 assignments, result_monitor[j % config.update_interval, :])
             if j % 100 == 0 and j > 0:
-                print('runs done:', j, 'of', int(num_examples))
-            if j % config.update_interval == 0 and j > 0:
-                if do_plot_performance:
-                    performance = update_performance_plot(performance_monitor,
-                        j, predicted_class_ranking, input_labels)
-                    print('Classification performance', performance)
+                log.info('runs done:', j, 'of', int(num_examples))
+            if j % config.update_interval == 0 and j > 0 and plot_performance:
+                performance = update_performance_plot(
+                    performance_monitor, j,
+                    predicted_class_ranking,
+                    input_labels)
+                print('Classification performance', performance)
             for i, name in enumerate(input_population_names):
                 input_groups[name + 'e'].rates = 0 * b2.Hz
             net.run(resting_time)
@@ -492,59 +517,50 @@ def main(test_mode=True):
         np.save(config.data_path + 'activity/inputLabels' +
                 str(num_examples), input_labels)
 
+#    saveobj = {'rate_monitors': rate_monitors,
+#               'spike_monitors': spike_monitors}
+#    with open('saved{}.pickle'.format(config.ending), 'w') as f:
+#        pickle.dump(saveobj, f)
+
     #-------------------------------------------------------------------------
     # plot results
     #-------------------------------------------------------------------------
-    if rate_monitors:
-        b2.figure()
-        for i, name in enumerate(rate_monitors):
-            b2.subplot(len(rate_monitors), 1, 1 + i)
-            b2.plot(rate_monitors[name].t / b2.second,
-                    rate_monitors[name].rate, '.')
-            b2.title('Rates of population ' + name)
+    b2.figure()
+    for i, name in enumerate(rate_monitors):
+        b2.subplot(len(rate_monitors), 1, 1 + i)
+        b2.plot(rate_monitors[name].t / b2.second,
+                rate_monitors[name].rate, '.')
+        b2.title('Rates of population ' + name)
+    b2.tight_layout()
+    b2.savefig('rates.pdf')
 
-    if spike_monitors:
-        b2.figure()
-        for i, name in enumerate(spike_monitors):
-            b2.subplot(len(spike_monitors), 1, 1 + i)
-            b2.plot(spike_monitors[name].t / b2.ms,
-                    spike_monitors[name].i, '.')
-            b2.title('Spikes of population ' + name)
+    b2.figure()
+    for i, name in enumerate(spike_monitors):
+        b2.subplot(len(spike_monitors), 1, 1 + i)
+        b2.plot(spike_monitors[name].t / b2.ms,
+                spike_monitors[name].i, '.')
+        b2.title('Spikes of population ' + name)
+    b2.tight_layout()
+    b2.savefig('spikes.pdf')
 
-    if spike_counters:
-        b2.figure()
-        b2.plot(spike_monitors['Ae'].count[:])
-        b2.title('Spike count of population Ae')
 
-    plot_2d_input_weights()
+    b2.figure()
+    b2.plot(spike_monitors['Ae'].count[:])
+    b2.title('Spike count of population Ae')
+    b2.tight_layout()
+    b2.savefig('counts.pdf')
 
-    plt.figure(5)
+    create_2d_input_weights_plot(connections)
 
-    subplot(3, 1, 1)
-
-    brian_plot(connections['XeAe'].w)
-    subplot(3, 1, 2)
-
-    brian_plot(connections['AeAi'].w)
-
-    subplot(3, 1, 3)
-
-    brian_plot(connections['AiAe'].w)
-
-    plt.figure(6)
-
-    subplot(3, 1, 1)
-
-    brian_plot(connections['XeAe'].delay)
-    subplot(3, 1, 2)
-
-    brian_plot(connections['AeAi'].delay)
-
-    subplot(3, 1, 3)
-
-    brian_plot(connections['AiAe'].delay)
-
-    b2.show()
+    b2.figure(figsize=(5, 15))
+    b2.subplot(3, 1, 1)
+    b2t.brian_plot(connections['XeAe'].w)
+    b2.subplot(3, 1, 2)
+    b2t.brian_plot(connections['AeAi'].w)
+    b2.subplot(3, 1, 3)
+    b2t.brian_plot(connections['AiAe'].w)
+    b2.tight_layout()
+    b2.savefig('connections.pdf')
 
 
 if __name__ == '__main__':
