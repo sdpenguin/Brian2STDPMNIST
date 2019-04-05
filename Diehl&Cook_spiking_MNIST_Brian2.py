@@ -93,23 +93,22 @@ def normalize_weights(connections, weight):
             conn.w = connweights[conn.i, conn.j]
 
 
-def get_2d_input_weights():
-    name = 'XeAe'
-    weight_matrix = np.zeros((n_input, n_e))
+def get_2d_input_weights(connections):
+    conn = connections['XeAe']
+    n_input = len(conn.source)
+    n_e = len(conn.target)
     n_e_sqrt = int(np.sqrt(n_e))
     n_in_sqrt = int(np.sqrt(n_input))
     num_values_col = n_e_sqrt * n_in_sqrt
     num_values_row = num_values_col
     rearranged_weights = np.zeros((num_values_col, num_values_row))
-    connMatrix = np.zeros((n_input, n_e))
-    connMatrix[connections[name].i, connections[name].j] = connections[name].w
-    weight_matrix = np.copy(connMatrix)
-
+    weights = np.zeros((n_input, n_e))
+    weights[conn.i, conn.j] = conn.w
     for i in range(n_e_sqrt):
         for j in range(n_e_sqrt):
-            rearranged_weights[i * n_in_sqrt: (i + 1) * n_in_sqrt, j * n_in_sqrt: (j + 1) * n_in_sqrt] = \
-                weight_matrix[:, i + j *
-                              n_e_sqrt].reshape((n_in_sqrt, n_in_sqrt))
+            wk = weights[:, i + j * n_e_sqrt].reshape((n_in_sqrt, n_in_sqrt))
+            rearranged_weights[i * n_in_sqrt: (i + 1) * n_in_sqrt,
+                               j * n_in_sqrt: (j + 1) * n_in_sqrt] = wk
     return rearranged_weights
 
 
