@@ -14,6 +14,9 @@ https://github.com/bamford/Brian2STDPMNIST
 @author: Steven P. Bamford
 '''
 
+# conda install -c conda-forge numpy scipy matplotlib keras brian2
+# conda install -c brian-team brian2tools
+
 import logging
 logging.captureWarnings(True)
 log = logging.getLogger('spiking-mnist')
