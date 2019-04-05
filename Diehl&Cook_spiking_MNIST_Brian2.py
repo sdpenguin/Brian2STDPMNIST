@@ -21,6 +21,11 @@ import brian2 as b2
 from brian2tools import *
 from keras.datasets import mnist
 
+
+class config:
+    # a global object to store configuration info
+    pass
+
 #------------------------------------------------------------------------------
 # functions
 #------------------------------------------------------------------------------
@@ -195,9 +200,9 @@ def main(test_mode=True):
     #-------------------------------------------------------------------------
 
     np.random.seed(0)
-    data_path = './'
+    config.data_path = './'
     if test_mode:
-        weight_path = data_path + 'weights/'
+        weight_path = config.data_path + 'weights/'
         num_examples = 10000 * 1
         use_testing_set = True
         do_plot_performance = False
@@ -205,7 +210,7 @@ def main(test_mode=True):
         ee_STDP_on = False
         update_interval = num_examples
     else:
-        weight_path = data_path + 'random/'
+        weight_path = config.data_path + 'random/'
         num_examples = 60000 * 3
         use_testing_set = False
         do_plot_performance = True
@@ -215,7 +220,7 @@ def main(test_mode=True):
             record_spikes = True
         ee_STDP_on = True
 
-    ending = ''
+    config.ending = ''
     n_input = 784
     n_e = 400
     n_i = n_e
@@ -337,7 +342,7 @@ def main(test_mode=True):
         neuron_groups[name + 'i'].v = v_rest_i - 40. * b2.mV
         if test_mode or weight_path[-8:] == 'weights/':
             neuron_groups['e'].theta = np.load(
-                weight_path + 'theta_' + name + ending + '.npy') * b2.volt
+                weight_path + 'theta_' + name + config.ending + '.npy') * b2.volt
         else:
             neuron_groups['e'].theta = np.ones((n_e)) * 20.0 * b2.mV
 
@@ -345,7 +350,7 @@ def main(test_mode=True):
         for conn_type in recurrent_conn_names:
             connName = name + conn_type[0] + name + conn_type[1]
             weightMatrix = get_matrix_from_file(
-                weight_path + '../random/' + connName + ending + '.npy')
+                weight_path + '../random/' + connName + config.ending + '.npy')
             model = 'w : 1'
             pre = 'g%s_post += w' % conn_type[0]
             post = ''
@@ -497,9 +502,9 @@ def main(test_mode=True):
     if not test_mode:
         save_connections()
     else:
-        np.save(data_path + 'activity/resultPopVecs' +
+        np.save(config.data_path + 'activity/resultPopVecs' +
                 str(num_examples), result_monitor)
-        np.save(data_path + 'activity/inputNumbers' +
+        np.save(config.data_path + 'activity/inputNumbers' +
                 str(num_examples), input_numbers)
 
     #-------------------------------------------------------------------------
