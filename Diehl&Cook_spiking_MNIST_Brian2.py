@@ -22,6 +22,9 @@ logging.captureWarnings(True)
 log = logging.getLogger('spiking-mnist')
 log.setLevel(logging.DEBUG)
 
+import matplotlib as mpl
+mpl.use('PDF')
+
 import os.path
 import numpy as np
 import matplotlib.cm as cmap
