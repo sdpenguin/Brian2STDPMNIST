@@ -62,9 +62,9 @@ def get_matrix_from_file(filename, shape=None):
     return arr
 
 
-def save_connections():
+def save_connections(connections):
     log.info('Saving connections')
-    for connName in save_conns:
+    for connName in config.save_conns:
         conn = connections[connName]
         connListSparse = list(zip(conn.i, conn.j, conn.w))
         out = os.path.join(config.data_path,
@@ -253,7 +253,7 @@ def main(test_mode=True):
     input_population_names = ['X']
     population_names = ['A']
     input_connection_names = ['XA']
-    save_conns = ['XeAe']
+    config.save_conns = ['XeAe']
     input_conn_names = ['ee_input']
     recurrent_conn_names = ['ei', 'ie']
     weight['ee_input'] = 78.
@@ -461,7 +461,7 @@ def main(test_mode=True):
         if j % weight_update_interval == 0 and not test_mode:
             update_2d_input_weights(input_weight_monitor, fig_weights)
         if j % save_connections_interval == 0 and j > 0 and not test_mode:
-            save_connections(str(j))
+            save_connections(connections)
             save_theta(str(j))
 
         current_spike_count = np.asarray(
@@ -501,7 +501,7 @@ def main(test_mode=True):
     if not test_mode:
         save_theta()
     if not test_mode:
-        save_connections()
+        save_connections(connections)
     else:
         np.save(config.data_path + 'activity/resultPopVecs' +
                 str(num_examples), result_monitor)
