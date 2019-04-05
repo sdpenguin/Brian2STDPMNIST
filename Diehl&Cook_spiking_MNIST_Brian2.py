@@ -38,10 +38,6 @@ class config:
     # a global object to store configuration info
     pass
 
-#------------------------------------------------------------------------------
-# functions
-#------------------------------------------------------------------------------
-
 
 def get_labeled_data():
     log.info('Loading MNIST data')
@@ -184,55 +180,48 @@ def get_new_assignments(result_monitor, input_labels):
 
 
 def main(test_mode=True):
+    config.ending = ''
+
     # load MNIST
     training, testing = get_labeled_data()
-
     config.classes = np.unique(training['y'])
     config.num_classes = len(config.classes)
+
+    # configuration
+    np.random.seed(0)
+    config.data_path = './'
+    if test_mode:
+        weight_path = config.data_path + 'weights/'
+        data = testing
+        num_epochs = 1
+        do_plot_performance = False
+        ee_STDP_on = False
+    else:
+        weight_path = config.data_path + 'random/'
+        data = training
+        num_epochs = 3
+        do_plot_performance = True
+        ee_STDP_on = True
+
+    record_spikes = True
+
+    config.update_interval = 1000
+    weight_update_interval = 100
+    save_connections_interval = 10000
+
+    num_examples = len(data) * num_epochs
+    n_input = data['x'][0].size
 
     #-------------------------------------------------------------------------
     # set parameters and equations
     #-------------------------------------------------------------------------
 
-    np.random.seed(0)
-    config.data_path = './'
-    if test_mode:
-        weight_path = config.data_path + 'weights/'
-        num_examples = 10000 * 1
-        use_testing_set = True
-        do_plot_performance = False
-        record_spikes = True
-        ee_STDP_on = False
-        config.update_interval = num_examples
-    else:
-        weight_path = config.data_path + 'random/'
-        num_examples = 60000 * 3
-        use_testing_set = False
-        do_plot_performance = True
-        if num_examples <= 60000:
-            record_spikes = True
-        else:
-            record_spikes = True
-        ee_STDP_on = True
-
-    config.ending = ''
-    n_input = 784
     n_e = 400
     n_i = n_e
+
     single_example_time = 0.35 * b2.second
     resting_time = 0.15 * b2.second
     runtime = num_examples * (single_example_time + resting_time)
-    if num_examples <= 10000:
-        config.update_interval = num_examples
-        weight_update_interval = 20
-    else:
-        config.update_interval = 10000
-        weight_update_interval = 100
-    if num_examples <= 60000:
-        save_connections_interval = 10000
-    else:
-        save_connections_interval = 10000
-        config.update_interval = 10000
 
     v_rest_e = -65. * b2.mV
     v_rest_i = -60. * b2.mV
@@ -243,36 +232,42 @@ def main(test_mode=True):
     refrac_e = 5. * b2.ms
     refrac_i = 2. * b2.ms
 
-    weight = {}
-    delay = {}
     input_population_names = ['X']
     population_names = ['A']
     input_connection_names = ['XA']
     config.save_conns = ['XeAe']
     input_conn_names = ['ee_input']
     recurrent_conn_names = ['ei', 'ie']
+
+    weight = {}
     weight['ee_input'] = 78.
+
+    delay = {}
     delay['ee_input'] = (0 * b2.ms, 10 * b2.ms)
     delay['ei_input'] = (0 * b2.ms, 5 * b2.ms)
+
     input_intensity = 2.
     start_input_intensity = input_intensity
 
     tc_pre_ee = 20 * b2.ms
     tc_post_1_ee = 20 * b2.ms
     tc_post_2_ee = 40 * b2.ms
+
     nu_ee_pre = 0.0001      # learning rate
     nu_ee_post = 0.01       # learning rate
+
     wmax_ee = 1.0
     exp_ee_pre = 0.2
     exp_ee_post = exp_ee_pre
+
     STDP_offset = 0.4
 
-    if test_mode:
-        scr_e = 'v = v_reset_e; timer = 0*ms'
-    else:
+    scr_e = 'v = v_reset_e; timer = 0*ms'
+    if not test_mode:
         tc_theta = 1e7 * b2.ms
         theta_plus_e = 0.05 * b2.mV
-        scr_e = 'v = v_reset_e; theta += theta_plus_e; timer = 0*ms'
+        scr_e += '; theta += theta_plus_e'
+
     offset = 20.0 * b2.mV
     v_thresh_e_str = '(v>(theta - offset + v_thresh_e)) and (timer>refrac_e)'
     v_thresh_i_str = 'v>v_thresh_i'
@@ -280,35 +275,33 @@ def main(test_mode=True):
 
     neuron_eqs_e = '''
             dv/dt = ((v_rest_e - v) + (I_synE+I_synI) / nS) / (100*ms)  : volt (unless refractory)
-            I_synE = ge * nS *         -v                           : amp
-            I_synI = gi * nS * (-100.*mV-v)                          : amp
-            dge/dt = -ge/(1.0*ms)                                   : 1
-            dgi/dt = -gi/(2.0*ms)                                  : 1
+            I_synE = ge * nS * -v  : amp
+            I_synI = gi * nS * (-100.*mV-v)  : amp
+            dge/dt = -ge/(1.0*ms)  : 1
+            dgi/dt = -gi/(2.0*ms)  :1
+            dtimer/dt = 0.1  : second
             '''
     if test_mode:
-        neuron_eqs_e += '\n  theta      :volt'
+        neuron_eqs_e += '\n  theta  :volt'
     else:
         neuron_eqs_e += '\n  dtheta/dt = -theta / (tc_theta)  : volt'
-    neuron_eqs_e += '\n  dtimer/dt = 0.1  : second'
 
     neuron_eqs_i = '''
             dv/dt = ((v_rest_i - v) + (I_synE+I_synI) / nS) / (10*ms)  : volt (unless refractory)
-            I_synE = ge * nS *         -v                           : amp
-            I_synI = gi * nS * (-85.*mV-v)                          : amp
-            dge/dt = -ge/(1.0*ms)                                   : 1
-            dgi/dt = -gi/(2.0*ms)                                  : 1
+            I_synE = ge * nS * -v  : amp
+            I_synI = gi * nS * (-85.*mV-v)  : amp
+            dge/dt = -ge/(1.0*ms)  : 1
+            dgi/dt = -gi/(2.0*ms)  : 1
             '''
     eqs_stdp_ee = '''
-                    post2before                            : 1
-                    dpre/dt   =   -pre/(tc_pre_ee)         : 1 (event-driven)
-                    dpost1/dt  = -post1/(tc_post_1_ee)     : 1 (event-driven)
-                    dpost2/dt  = -post2/(tc_post_2_ee)     : 1 (event-driven)
-                '''
+            post2before  : 1
+            dpre/dt = -pre/(tc_pre_ee)  : 1 (event-driven)
+            dpost1/dt  = -post1/(tc_post_1_ee)  : 1 (event-driven)
+            dpost2/dt  = -post2/(tc_post_2_ee)  : 1 (event-driven)
+            '''
     eqs_stdp_pre_ee = 'pre = 1.; w = clip(w + nu_ee_pre * post1, 0, wmax_ee)'
     eqs_stdp_post_ee = 'post2before = post2; w = clip(w + nu_ee_post * pre * post2before, 0, wmax_ee); post1 = 1.; post2 = 1.'
 
-    b2.ion()
-    fig_num = 1
     neuron_groups = {}
     input_groups = {}
     connections = {}
@@ -400,11 +393,10 @@ def main(test_mode=True):
 
             connections[connName] = b2.Synapses(input_groups[connName[0:2]], neuron_groups[connName[2:4]],
                                                 model=model, on_pre=pre, on_post=post)
+            connections[connName].connect()  # all-to-all connection
             minDelay = delay[connType][0]
             maxDelay = delay[connType][1]
             deltaDelay = maxDelay - minDelay
-            # TODO: test this
-            connections[connName].connect(True)  # all-to-all connection
             connections[connName].delay = 'minDelay + rand() * deltaDelay'
             connections[connName].w = weightMatrix[connections[connName].i,
                                                    connections[connName].j]
@@ -425,7 +417,6 @@ def main(test_mode=True):
     predicted_class_ranking = np.zeros((num_examples, config.num_classes))
     if not test_mode:
         input_weight_monitor = plot_2d_input_weights(wmax_ee)
-        fig_num += 1
     if do_plot_performance:
         performance_monitor = plot_performance()
     for i, name in enumerate(input_population_names):
@@ -505,8 +496,7 @@ def main(test_mode=True):
     # plot results
     #-------------------------------------------------------------------------
     if rate_monitors:
-        b2.figure(fig_num)
-        fig_num += 1
+        b2.figure()
         for i, name in enumerate(rate_monitors):
             b2.subplot(len(rate_monitors), 1, 1 + i)
             b2.plot(rate_monitors[name].t / b2.second,
@@ -514,8 +504,7 @@ def main(test_mode=True):
             b2.title('Rates of population ' + name)
 
     if spike_monitors:
-        b2.figure(fig_num)
-        fig_num += 1
+        b2.figure()
         for i, name in enumerate(spike_monitors):
             b2.subplot(len(spike_monitors), 1, 1 + i)
             b2.plot(spike_monitors[name].t / b2.ms,
@@ -523,8 +512,7 @@ def main(test_mode=True):
             b2.title('Spikes of population ' + name)
 
     if spike_counters:
-        b2.figure(fig_num)
-        fig_num += 1
+        b2.figure()
         b2.plot(spike_monitors['Ae'].count[:])
         b2.title('Spike count of population Ae')
 
@@ -556,7 +544,6 @@ def main(test_mode=True):
 
     brian_plot(connections['AiAe'].delay)
 
-    b2.ioff()
     b2.show()
 
 
