@@ -19,11 +19,12 @@ logging.captureWarnings(True)
 log = logging.getLogger('spiking-mnist')
 log.setLevel(logging.DEBUG)
 
+import os.path
 import numpy as np
 import matplotlib.cm as cmap
-from brian2 import *
+from scipy import sparse
 import brian2 as b2
-from brian2tools import *
+import brian2tools as b2t
 from keras.datasets import mnist
 
 
@@ -44,41 +45,32 @@ def get_labeled_data():
     return training, testing
 
 
-def get_matrix_from_file(fileName):
-    offset = len(ending) + 4
-    if fileName[-4 - offset] == 'X':
-        n_src = n_input
-    else:
-        if fileName[-3 - offset] == 'e':
-            n_src = n_e
-        else:
-            n_src = n_i
-    if fileName[-1 - offset] == 'e':
-        n_tgt = n_e
-    else:
-        n_tgt = n_i
-    readout = np.load(fileName)
-    print(readout.shape, fileName)
-    value_arr = np.zeros((n_src, n_tgt))
-    if not readout.shape == (0,):
-        value_arr[np.int32(readout[:, 0]), np.int32(
-            readout[:, 1])] = readout[:, 2]
-    return value_arr
+def get_matrix_from_file(filename, shape=None):
+    log.debug(f'Reading matrix from {filename}')
+    i, j, data = np.load(filename).T
+    i = i.astype(np.int)
+    j = j.astype(np.int)
+    log.debug(f'Read {len(data)} connections')
+    arr = sparse.coo_matrix((data, (i, j)), shape).todense()
+    log.debug(f'Created a matrix with shape {arr.shape}')
+    return arr
 
 
-def save_connections(ending=''):
-    print('save connections')
+def save_connections():
+    log.info('Saving connections')
     for connName in save_conns:
         conn = connections[connName]
         connListSparse = list(zip(conn.i, conn.j, conn.w))
-        np.save(data_path + 'weights/' + connName + ending, connListSparse)
+        out = os.path.join(config.data_path,
+                           'weights/{}{}'.format(connName, config.ending))
+        np.save(out, connListSparse)
 
 
-def save_theta(ending=''):
+def save_theta():
     print('save theta')
     for pop_name in population_names:
-        np.save(data_path + 'weights/theta_' + pop_name +
-                ending, neuron_groups[pop_name + 'e'].theta)
+        np.save(config.data_path + 'weights/theta_' + pop_name +
+                config.ending, neuron_groups[pop_name + 'e'].theta)
 
 
 def normalize_weights():
@@ -388,7 +380,7 @@ def main(test_mode=True):
     #-------------------------------------------------------------------------
     pop_values = [0, 0, 0]
     for i, name in enumerate(input_population_names):
-        input_groups[name + 'e'] = b2.PoissonGroup(n_input, 0 * Hz)
+        input_groups[name + 'e'] = b2.PoissonGroup(n_input, 0 * b2.Hz)
         rate_monitors[name +
                       'e'] = b2.PopulationRateMonitor(input_groups[name + 'e'])
 
@@ -398,7 +390,7 @@ def main(test_mode=True):
             log.debug(f'connType {connType} of {input_conn_names}')
             connName = name[0] + connType[0] + name[1] + connType[1]
             weightMatrix = get_matrix_from_file(
-                weight_path + connName + ending + '.npy')
+                weight_path + connName + config.ending + '.npy')
             model = 'w : 1'
             pre = 'g%s_post += w' % connType[0]
             post = ''
@@ -422,8 +414,8 @@ def main(test_mode=True):
     #-------------------------------------------------------------------------
     # run the simulation and set inputs
     #-------------------------------------------------------------------------
-
-    net = Network()
+    log.info('Constructing the network')
+    net = b2.Network()
     for obj_list in [neuron_groups, input_groups, connections, rate_monitors,
                      spike_monitors, spike_counters]:
         for key in obj_list:
@@ -440,8 +432,9 @@ def main(test_mode=True):
         performance_monitor, performance, fig_num, fig_performance = plot_performance(
             fig_num)
     for i, name in enumerate(input_population_names):
-        input_groups[name + 'e'].rates = 0 * Hz
-    net.run(0 * second)
+        input_groups[name + 'e'].rates = 0 * b2.Hz
+    log.info('Starting simulations')
+    net.run(0 * b2.second)
     j = 0
     while j < (int(num_examples)):
         if test_mode:
@@ -455,9 +448,9 @@ def main(test_mode=True):
             normalize_weights()
             spike_rates = training['x'][j % 60000, :, :].reshape(
                 (n_input)) / 8. * input_intensity
-        input_groups['Xe'].rates = spike_rates * Hz
-    #     print 'run number:', j+1, 'of', int(num_examples)
-        net.run(single_example_time, report='text')
+        input_groups['Xe'].rates = spike_rates * b2.Hz
+        log.info(f'run number {j+1} of {int(num_examples)}')
+        net.run(single_example_time, report=None)
 
         if j % update_interval == 0 and j > 0:
             assignments = get_new_assignments(
@@ -474,7 +467,7 @@ def main(test_mode=True):
         if np.sum(current_spike_count) < 5:
             input_intensity += 1
             for i, name in enumerate(input_population_names):
-                input_groups[name + 'e'].rates = 0 * Hz
+                input_groups[name + 'e'].rates = 0 * b2.Hz
             net.run(resting_time)
         else:
             result_monitor[j % update_interval, :] = current_spike_count
@@ -493,7 +486,7 @@ def main(test_mode=True):
                     print('Classification performance',
                           performance[:(j / float(update_interval)) + 1])
             for i, name in enumerate(input_population_names):
-                input_groups[name + 'e'].rates = 0 * Hz
+                input_groups[name + 'e'].rates = 0 * b2.Hz
             net.run(resting_time)
             input_intensity = start_input_intensity
             j += 1
