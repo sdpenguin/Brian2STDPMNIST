@@ -124,6 +124,7 @@ def plot_2d_input_weights(max_weight=1.0):
 
 
 def update_2d_input_weights_plot(monitor):
+    log.info('Updating 2d input weights plot')
     weights = get_2d_input_weights()
     monitor.set_array(weights)
     fig = monitor.axes.figure
@@ -148,6 +149,7 @@ def plot_performance():
 
 
 def update_performance_plot(monitor, current_step, pred_ranking, labels):
+    log.info('Updating performance plot')
     current_perf = get_current_performance(pred_ranking, labels)
     timestep, performance = [i.tolist() for i in monitor.get_data()]
     timestep.append(current_perf)
@@ -158,30 +160,26 @@ def update_performance_plot(monitor, current_step, pred_ranking, labels):
     return performance
 
 
-def get_recognized_number_ranking(assignments, spike_rates):
-    summed_rates = [0] * 10
-    num_assignments = [0] * 10
-    for i in range(10):
-        num_assignments[i] = len(np.where(assignments == i)[0])
-        if num_assignments[i] > 0:
-            summed_rates[i] = np.sum(
-                spike_rates[assignments == i]) / num_assignments[i]
-    return np.argsort(summed_rates)[::-1]
+def get_predicted_class_ranking(assignments, spike_rates):
+    mean_rates = np.zeros(config.num_classes)
+    for i in range(config.num_classes):
+        num_assignments = (assignments == i).sum()
+        if num_assignments > 0:
+            mean_rates[i] = spike_rates[assignments == i].mean()
+    return np.argsort(mean_rates)[::-1]
 
 
 def get_new_assignments(result_monitor, input_labels):
-    assignments = np.zeros(n_e)
-    input_nums = np.asarray(input_labels)
-    maximum_rate = [0] * n_e
-    for j in range(10):
-        num_assignments = len(np.where(input_nums == j)[0])
-        if num_assignments > 0:
-            rate = np.sum(
-                result_monitor[input_nums == j], axis=0) / num_assignments
-        for i in range(n_e):
-            if rate[i] > maximum_rate[i]:
-                maximum_rate[i] = rate[i]
-                assignments[i] = j
+    input_labels = np.asarray(input_labels)
+    n_e = result_monitor.shape[1]
+    # average rates over all examples for each class
+    rates = np.zeros(config.num_classes, n_e)
+    for j in range(config.num_classes):
+        num_labels = (input_labels == j).sum()
+        if num_labels > 0:
+            rates[j] = np.mean(result_monitor[input_labels == j], axis=0)
+    # assign each neuron to the class producing the highest average rate
+    assignments = rates.argmax(axis=1)
     return assignments
 
 
@@ -453,7 +451,7 @@ def main(test_mode=True):
 
         if j % config.update_interval == 0 and j > 0:
             assignments = get_new_assignments(
-                result_monitor[:], input_labels[j - config.update_interval: j])
+                result_monitor, input_labels[j - config.update_interval: j])
         if j % weight_update_interval == 0 and not test_mode:
             update_2d_input_weights_plot(input_weight_monitor)
         if j % save_connections_interval == 0 and j > 0 and not test_mode:
@@ -474,7 +472,7 @@ def main(test_mode=True):
                 input_labels[j] = testing['y'][j % 10000]
             else:
                 input_labels[j] = training['y'][j % 60000]
-            predicted_class_ranking[j, :] = get_recognized_number_ranking(
+            predicted_class_ranking[j, :] = get_predicted_class_ranking(
                 assignments, result_monitor[j % config.update_interval, :])
             if j % 100 == 0 and j > 0:
                 print('runs done:', j, 'of', int(num_examples))
