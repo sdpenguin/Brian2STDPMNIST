@@ -79,21 +79,18 @@ def save_theta():
                 config.ending, neuron_groups[pop_name + 'e'].theta)
 
 
-def normalize_weights():
+def normalize_weights(connections, weight):
     for connName in connections:
         if connName[1] == 'e' and connName[3] == 'e':
-            len_source = len(connections[connName].source)
-            len_target = len(connections[connName].target)
-            connection = np.zeros((len_source, len_target))
-            connection[connections[connName].i,
-                       connections[connName].j] = connections[connName].w
-            temp_conn = np.copy(connection)
-            colSums = np.sum(temp_conn, axis=0)
+            conn = connections[connName]
+            len_source = len(conn.source)
+            len_target = len(conn.target)
+            connweights = np.zeros((len_source, len_target))
+            connweights[conn.i, conn.j] = conn.w
+            colSums = connweights.sum(axis=0)
             colFactors = weight['ee_input'] / colSums
-            for j in range(n_e):
-                temp_conn[:, j] *= colFactors[j]
-            connections[connName].w = temp_conn[connections[connName].i,
-                                                connections[connName].j]
+            connweights *= colFactors
+            conn.w = connweights[conn.i, conn.j]
 
 
 def get_2d_input_weights():
@@ -451,7 +448,7 @@ def main(test_mode=True):
                 spike_rates = training['x'][j % 60000, :, :].reshape(
                     (n_input)) / 8. * input_intensity
         else:
-            normalize_weights()
+            normalize_weights(connections, weight)
             spike_rates = training['x'][j % 60000, :, :].reshape(
                 (n_input)) / 8. * input_intensity
         input_groups['Xe'].rates = spike_rates * b2.Hz
