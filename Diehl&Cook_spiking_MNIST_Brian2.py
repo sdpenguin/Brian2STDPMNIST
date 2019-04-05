@@ -112,55 +112,50 @@ def get_2d_input_weights(connections):
     return rearranged_weights
 
 
-def plot_2d_input_weights():
+def plot_2d_input_weights(max_weight=1.0):
     name = 'XeAe'
     weights = get_2d_input_weights()
-    fig = b2.figure(fig_num, figsize=(18, 18))
-    im2 = b2.imshow(weights, interpolation="nearest", vmin=0,
-                    vmax=wmax_ee, cmap=cmap.get_cmap('hot_r'))
-    b2.colorbar(im2)
+    fig, ax = b2.subplots(figsize=(18, 18))
+    monitor = ax.imshow(weights, interpolation="nearest", vmin=0,
+                        vmax=max_weight, cmap=cmap.get_cmap('hot_r'))
+    b2.colorbar(monitor)
     b2.title('weights of connection' + name)
-    fig.canvas.draw()
-    return im2, fig
+    return monitor
 
 
-def update_2d_input_weights(im, fig):
+def update_2d_input_weights_plot(monitor):
     weights = get_2d_input_weights()
-    im.set_array(weights)
-    fig.canvas.draw()
-    return im
+    monitor.set_array(weights)
+    fig = monitor.axes.figure
+    fig.save('figures/input_weights.pdf')
 
 
-def get_current_performance(performance, current_example_num):
-    current_evaluation = int(current_example_num / update_interval)
-    start_num = current_example_num - update_interval
-    end_num = current_example_num
-    difference = outputNumbers[start_num:end_num,
-                               0] - input_numbers[start_num:end_num]
-    correct = len(np.where(difference == 0)[0])
-    performance[current_evaluation] = correct / float(update_interval) * 100
+def get_current_performance(pred_ranking, labels):
+    prediction = pred_ranking[-config.update_interval:, 0]
+    labels = labels[-config.update_interval:]
+    correct = prediction == labels
+    return 100 * correct.mean()
+
+
+def plot_performance():
+    fig, ax = b2.subplots(figsize=(5, 5))
+    monitor, = ax.plot([])
+    ax.set_xlabel('time step')
+    ax.set_ylabel('accuracy')
+    ax.set_ylim(ymax=100)
+    ax.set_title('Classification performance')
+    return monitor
+
+
+def update_performance_plot(monitor, current_step, pred_ranking, labels):
+    current_perf = get_current_performance(pred_ranking, labels)
+    timestep, performance = [i.tolist() for i in monitor.get_data()]
+    timestep.append(current_perf)
+    performance.append(current_perf)
+    monitor.set_data(timestep, performance)
+    fig = monitor.axes.figure
+    fig.save('figures/performance.pdf')
     return performance
-
-
-def plot_performance(fig_num):
-    num_evaluations = int(num_examples / update_interval)
-    time_steps = list(range(0, num_evaluations))
-    performance = np.zeros(num_evaluations)
-    fig = b2.figure(fig_num, figsize=(5, 5))
-    fig_num += 1
-    ax = fig.add_subplot(111)
-    im2, = ax.plot(time_steps, performance)  # my_cmap
-    b2.ylim(ymax=100)
-    b2.title('Classification performance')
-    fig.canvas.draw()
-    return im2, performance, fig_num, fig
-
-
-def update_performance_plot(im, performance, current_example_num, fig):
-    performance = get_current_performance(performance, current_example_num)
-    im.set_ydata(performance)
-    fig.canvas.draw()
-    return im, performance
 
 
 def get_recognized_number_ranking(assignments, spike_rates):
@@ -174,9 +169,9 @@ def get_recognized_number_ranking(assignments, spike_rates):
     return np.argsort(summed_rates)[::-1]
 
 
-def get_new_assignments(result_monitor, input_numbers):
+def get_new_assignments(result_monitor, input_labels):
     assignments = np.zeros(n_e)
-    input_nums = np.asarray(input_numbers)
+    input_nums = np.asarray(input_labels)
     maximum_rate = [0] * n_e
     for j in range(10):
         num_assignments = len(np.where(input_nums == j)[0])
@@ -194,6 +189,9 @@ def main(test_mode=True):
     # load MNIST
     training, testing = get_labeled_data()
 
+    config.classes = np.unique(training['y'])
+    config.num_classes = len(config.classes)
+
     #-------------------------------------------------------------------------
     # set parameters and equations
     #-------------------------------------------------------------------------
@@ -207,7 +205,7 @@ def main(test_mode=True):
         do_plot_performance = False
         record_spikes = True
         ee_STDP_on = False
-        update_interval = num_examples
+        config.update_interval = num_examples
     else:
         weight_path = config.data_path + 'random/'
         num_examples = 60000 * 3
@@ -227,16 +225,16 @@ def main(test_mode=True):
     resting_time = 0.15 * b2.second
     runtime = num_examples * (single_example_time + resting_time)
     if num_examples <= 10000:
-        update_interval = num_examples
+        config.update_interval = num_examples
         weight_update_interval = 20
     else:
-        update_interval = 10000
+        config.update_interval = 10000
         weight_update_interval = 100
     if num_examples <= 60000:
         save_connections_interval = 10000
     else:
         save_connections_interval = 10000
-        update_interval = 10000
+        config.update_interval = 10000
 
     v_rest_e = -65. * b2.mV
     v_rest_i = -60. * b2.mV
@@ -319,7 +317,7 @@ def main(test_mode=True):
     rate_monitors = {}
     spike_monitors = {}
     spike_counters = {}
-    result_monitor = np.zeros((update_interval, n_e))
+    result_monitor = np.zeros((config.update_interval, n_e))
 
     neuron_groups['e'] = b2.NeuronGroup(n_e * len(population_names), neuron_eqs_e,
                                         threshold=v_thresh_e_str, refractory=refrac_e, reset=scr_e, method='euler')
@@ -425,14 +423,13 @@ def main(test_mode=True):
 
     previous_spike_count = np.zeros(n_e)
     assignments = np.zeros(n_e)
-    input_numbers = [0] * num_examples
-    outputNumbers = np.zeros((num_examples, 10))
+    input_labels = [0] * num_examples
+    predicted_class_ranking = np.zeros((num_examples, config.num_classes))
     if not test_mode:
-        input_weight_monitor, fig_weights = plot_2d_input_weights()
+        input_weight_monitor = plot_2d_input_weights(wmax_ee)
         fig_num += 1
     if do_plot_performance:
-        performance_monitor, performance, fig_num, fig_performance = plot_performance(
-            fig_num)
+        performance_monitor = plot_performance()
     for i, name in enumerate(input_population_names):
         input_groups[name + 'e'].rates = 0 * b2.Hz
     log.info('Starting simulations')
@@ -454,11 +451,11 @@ def main(test_mode=True):
         log.info(f'run number {j+1} of {int(num_examples)}')
         net.run(single_example_time, report=None)
 
-        if j % update_interval == 0 and j > 0:
+        if j % config.update_interval == 0 and j > 0:
             assignments = get_new_assignments(
-                result_monitor[:], input_numbers[j - update_interval: j])
+                result_monitor[:], input_labels[j - config.update_interval: j])
         if j % weight_update_interval == 0 and not test_mode:
-            update_2d_input_weights(input_weight_monitor, fig_weights)
+            update_2d_input_weights_plot(input_weight_monitor)
         if j % save_connections_interval == 0 and j > 0 and not test_mode:
             save_connections(connections)
             save_theta(population_names, neuron_groups)
@@ -472,21 +469,20 @@ def main(test_mode=True):
                 input_groups[name + 'e'].rates = 0 * b2.Hz
             net.run(resting_time)
         else:
-            result_monitor[j % update_interval, :] = current_spike_count
+            result_monitor[j % config.update_interval, :] = current_spike_count
             if test_mode and use_testing_set:
-                input_numbers[j] = testing['y'][j % 10000]
+                input_labels[j] = testing['y'][j % 10000]
             else:
-                input_numbers[j] = training['y'][j % 60000]
-            outputNumbers[j, :] = get_recognized_number_ranking(
-                assignments, result_monitor[j % update_interval, :])
+                input_labels[j] = training['y'][j % 60000]
+            predicted_class_ranking[j, :] = get_recognized_number_ranking(
+                assignments, result_monitor[j % config.update_interval, :])
             if j % 100 == 0 and j > 0:
                 print('runs done:', j, 'of', int(num_examples))
-            if j % update_interval == 0 and j > 0:
+            if j % config.update_interval == 0 and j > 0:
                 if do_plot_performance:
-                    unused, performance = update_performance_plot(
-                        performance_monitor, performance, j, fig_performance)
-                    print('Classification performance',
-                          performance[:(j / float(update_interval)) + 1])
+                    performance = update_performance_plot(performance_monitor,
+                        j, predicted_class_ranking, input_labels)
+                    print('Classification performance', performance)
             for i, name in enumerate(input_population_names):
                 input_groups[name + 'e'].rates = 0 * b2.Hz
             net.run(resting_time)
@@ -504,8 +500,8 @@ def main(test_mode=True):
     else:
         np.save(config.data_path + 'activity/resultPopVecs' +
                 str(num_examples), result_monitor)
-        np.save(config.data_path + 'activity/inputNumbers' +
-                str(num_examples), input_numbers)
+        np.save(config.data_path + 'activity/inputLabels' +
+                str(num_examples), input_labels)
 
     #-------------------------------------------------------------------------
     # plot results
