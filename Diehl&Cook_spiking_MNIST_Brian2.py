@@ -14,6 +14,11 @@ https://github.com/bamford/Brian2STDPMNIST
 @author: Steven P. Bamford
 '''
 
+import logging
+logging.captureWarnings(True)
+log = logging.getLogger('spiking-mnist')
+log.setLevel(logging.DEBUG)
+
 import numpy as np
 import matplotlib.cm as cmap
 from brian2 import *
@@ -32,7 +37,7 @@ class config:
 
 
 def get_labeled_data():
-    """Get the MNIST data"""
+    log.info('Loading MNIST data')
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
     training = {'x': x_train, 'y': y_train}
     testing = {'x': x_test, 'y': y_test}
@@ -331,7 +336,7 @@ def main(test_mode=True):
     # create network population and recurrent connections
     #-------------------------------------------------------------------------
     for subgroup_n, name in enumerate(population_names):
-        print('create neuron group', name)
+        log.info(f'Creating neuron group {name}')
 
         neuron_groups[name + 'e'] = neuron_groups['e'][subgroup_n *
                                                        n_e:(subgroup_n + 1) * n_e]
@@ -346,7 +351,7 @@ def main(test_mode=True):
         else:
             neuron_groups['e'].theta = np.ones((n_e)) * 20.0 * b2.mV
 
-        print('create recurrent connections')
+        log.info(f'Creating recurrent connections')
         for conn_type in recurrent_conn_names:
             connName = name + conn_type[0] + name + conn_type[1]
             weightMatrix = get_matrix_from_file(
@@ -361,11 +366,11 @@ def main(test_mode=True):
                     post = eqs_stdp_post_ee
             connections[connName] = b2.Synapses(neuron_groups[connName[0:2]], neuron_groups[connName[2:4]],
                                                 model=model, on_pre=pre, on_post=post)
-            connections[connName].connect(True)  # all-to-all connection
+            connections[connName].connect()  # all-to-all connection
             connections[connName].w = weightMatrix[connections[connName].i,
                                                    connections[connName].j]
 
-        print('create monitors for', name)
+        log.info(f'Creating monitors for {name}')
         rate_monitors[name +
                       'e'] = b2.PopulationRateMonitor(neuron_groups[name + 'e'])
         rate_monitors[name +
@@ -388,8 +393,9 @@ def main(test_mode=True):
                       'e'] = b2.PopulationRateMonitor(input_groups[name + 'e'])
 
     for name in input_connection_names:
-        print('create connections between', name[0], 'and', name[1])
+        log.info(f'Creating connections between {name[0]} and {name[1]}')
         for connType in input_conn_names:
+            log.debug(f'connType {connType} of {input_conn_names}')
             connName = name[0] + connType[0] + name[1] + connType[1]
             weightMatrix = get_matrix_from_file(
                 weight_path + connName + ending + '.npy')
@@ -397,8 +403,7 @@ def main(test_mode=True):
             pre = 'g%s_post += w' % connType[0]
             post = ''
             if ee_STDP_on:
-                print('create STDP for connection',
-                      name[0] + 'e' + name[1] + 'e')
+                log.info(f'Creating STDP for connection {name[0]}e{name[1]}e')
                 model += eqs_stdp_ee
                 pre += '; ' + eqs_stdp_pre_ee
                 post = eqs_stdp_post_ee
