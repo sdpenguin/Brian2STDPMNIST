@@ -72,8 +72,8 @@ def save_connections(connections):
         np.save(out, connListSparse)
 
 
-def save_theta():
-    print('save theta')
+def save_theta(population_names, neuron_groups):
+    log.info('Saving theta')
     for pop_name in population_names:
         np.save(config.data_path + 'weights/theta_' + pop_name +
                 config.ending, neuron_groups[pop_name + 'e'].theta)
@@ -462,7 +462,7 @@ def main(test_mode=True):
             update_2d_input_weights(input_weight_monitor, fig_weights)
         if j % save_connections_interval == 0 and j > 0 and not test_mode:
             save_connections(connections)
-            save_theta(str(j))
+            save_theta(population_names, neuron_groups)
 
         current_spike_count = np.asarray(
             spike_counters['Ae'].count[:]) - previous_spike_count
@@ -499,7 +499,7 @@ def main(test_mode=True):
     #-------------------------------------------------------------------------
     print('save results')
     if not test_mode:
-        save_theta()
+        save_theta(population_names, neuron_groups)
     if not test_mode:
         save_connections(connections)
     else:
