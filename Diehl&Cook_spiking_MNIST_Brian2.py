@@ -70,8 +70,8 @@ def load_connections(connName, random=True):
 
 
 def save_connections(connections):
-    log.info('Saving connections')
     for connName in config.save_conns:
+        log.info('Saving connections {}'.format(connName))
         conn = connections[connName]
         connListSparse = list(zip(conn.i, conn.j, conn.w))
         filename = os.path.join(config.data_path, config.weight_path,
@@ -137,7 +137,7 @@ def create_2d_input_weights_plot(connections, max_weight=1.0):
                         vmax=max_weight, cmap=cmap.get_cmap('hot_r'))
     b2.colorbar(monitor)
     b2.title('weights of connection' + name)
-    b2.tight_layout()
+    fig.set_tight_layout(True)
     return monitor
 
 
@@ -161,9 +161,9 @@ def create_performance_plot():
     monitor, = ax.plot([])
     ax.set_xlabel('time step')
     ax.set_ylabel('accuracy')
-    ax.set_ylim(ymax=100)
+    ax.set_ylim(top=100)
     ax.set_title('Classification performance')
-    b2.tight_layout()
+    fig.set_tight_layout(True)
     return monitor
 
 
@@ -465,6 +465,7 @@ def main(test_mode=True):
     #-------------------------------------------------------------------------
     log.info('Constructing the network')
     net = b2.Network()
+    primary_neuron_groups = {p: neuron_groups[p] for p in neuron_groups if len(p) == 1}
     for obj_list in [neuron_groups, input_groups, connections, rate_monitors,
                      spike_monitors, spike_counters]:
         for key in obj_list:
@@ -504,42 +505,50 @@ def main(test_mode=True):
     #-------------------------------------------------------------------------
     # plot results
     #-------------------------------------------------------------------------
-    b2.figure()
+    log.info('Plotting results')
+    fig = b2.figure(figsize=(5, 10))
     for i, name in enumerate(rate_monitors):
         b2.subplot(len(rate_monitors), 1, 1 + i)
-        b2.plot(rate_monitors[name].t / b2.second,
-                rate_monitors[name].rate, '.')
+        t = np.asarray(rate_monitors[name].t)
+        rate = rate_monitors[name].smooth_rate(width=0.1 * b2.second)
+        sample = max(int(len(t) / 1000), 1)
+        b2.plot(t[::sample], rate[::sample], '-')
         b2.title('Rates of population ' + name)
-    b2.tight_layout()
-    b2.savefig('rates.pdf')
+    fig.set_tight_layout(True)
+    b2.savefig('figures/rates.pdf')
 
-    b2.figure()
+    fig = b2.figure()
     for i, name in enumerate(spike_monitors):
         b2.subplot(len(spike_monitors), 1, 1 + i)
-        b2.plot(spike_monitors[name].t / b2.ms,
-                spike_monitors[name].i, '.')
+        t = np.asarray(spike_monitors[name].t / b2.ms)
+        idx = spike_monitors[name].i
+        while len(t) > 1000:
+            t = t[::10]
+            idx = idx[::10]
+        b2.plot(t, idx, '.')
         b2.title('Spikes of population ' + name)
-    b2.tight_layout()
-    b2.savefig('spikes.pdf')
+    fig.set_tight_layout(True)
+    b2.savefig('figures/spikes.pdf')
 
 
-    b2.figure()
+    fig = b2.figure()
     b2.plot(spike_monitors['Ae'].count[:])
     b2.title('Spike count of population Ae')
-    b2.tight_layout()
-    b2.savefig('counts.pdf')
+    fig.set_tight_layout(True)
+    b2.savefig('figures/counts.pdf')
 
-    create_2d_input_weights_plot(connections)
+    input_weight_monitor = create_2d_input_weights_plot(connections)
+    update_2d_input_weights_plot(input_weight_monitor, connections)
 
-    b2.figure(figsize=(5, 15))
+    fig = b2.figure(figsize=(5, 10))
     b2.subplot(3, 1, 1)
     b2t.brian_plot(connections['XeAe'].w)
     b2.subplot(3, 1, 2)
     b2t.brian_plot(connections['AeAi'].w)
     b2.subplot(3, 1, 3)
     b2t.brian_plot(connections['AiAe'].w)
-    b2.tight_layout()
-    b2.savefig('connections.pdf')
+    fig.set_tight_layout(True)
+    b2.savefig('figures/connections.pdf')
 
 
 if __name__ == '__main__':
