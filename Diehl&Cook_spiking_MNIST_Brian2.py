@@ -453,9 +453,12 @@ def main(test_mode=True):
             deltaDelay = maxDelay - minDelay
             conn.delay = 'minDelay + rand() * deltaDelay'
             conn.w = weightMatrix[conn.i, conn.j]
-            # small amount is added to avoid division by zero
-            conn.run_regularly("w = w * {} / (wtot_post + 0.001)".format(weight['ee_input']),
-                               dt=(single_example_time + resting_time))
+            if ee_STDP_on:
+                # small amount is added to avoid division by zero
+                norm_weights = b2.Equations('w = w * wmax / (wtot_post + 0.001)',
+                                         wmax=weight['ee_input'])
+                conn.run_regularly(norm_weights,
+                                   dt=(single_example_time + resting_time))
 
     #-------------------------------------------------------------------------
     # run the simulation and set inputs
