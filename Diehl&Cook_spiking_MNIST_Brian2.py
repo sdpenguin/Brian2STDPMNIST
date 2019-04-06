@@ -34,6 +34,7 @@ import brian2tools as b2t
 from keras.datasets import mnist
 import pickle
 
+b2.set_device('cpp_standalone')
 
 class config:
     # a global object to store configuration info
@@ -102,15 +103,14 @@ def normalize_weights(connections, weight):
             conn = connections[connName]
             len_source = len(conn.source)
             len_target = len(conn.target)
-            connweights = np.zeros((len_source, len_target))
-            connweights[conn.i, conn.j] = conn.w
+            connweights = np.reshape(conn.w, (len_source, len_target))
             colSums = connweights.sum(axis=0)
             colFactors = weight['ee_input'] / colSums
             connweights *= colFactors
-            conn.w = connweights[conn.i, conn.j]
+            conn.w = connweights.flatten()
 
 
-def get_2d_input_weights(connections):
+def get_2d_input_weights(connections, blank=False):
     conn = connections['XeAe']
     n_input = len(conn.source)
     n_e = len(conn.target)
@@ -119,19 +119,19 @@ def get_2d_input_weights(connections):
     num_values_col = n_e_sqrt * n_in_sqrt
     num_values_row = num_values_col
     rearranged_weights = np.zeros((num_values_col, num_values_row))
-    weights = np.zeros((n_input, n_e))
-    weights[conn.i, conn.j] = conn.w
-    for i in range(n_e_sqrt):
-        for j in range(n_e_sqrt):
-            wk = weights[:, i + j * n_e_sqrt].reshape((n_in_sqrt, n_in_sqrt))
-            rearranged_weights[i * n_in_sqrt: (i + 1) * n_in_sqrt,
-                               j * n_in_sqrt: (j + 1) * n_in_sqrt] = wk
+    if not blank:
+        weights = np.reshape(conn.w, (n_input, n_e))
+        for i in range(n_e_sqrt):
+            for j in range(n_e_sqrt):
+                wk = weights[:, i + j * n_e_sqrt].reshape((n_in_sqrt, n_in_sqrt))
+                rearranged_weights[i * n_in_sqrt: (i + 1) * n_in_sqrt,
+                                   j * n_in_sqrt: (j + 1) * n_in_sqrt] = wk
     return rearranged_weights
 
 
 def create_2d_input_weights_plot(connections, max_weight=1.0):
     name = 'XeAe'
-    weights = get_2d_input_weights(connections)
+    weights = get_2d_input_weights(connections, blank=True)
     fig, ax = b2.subplots(figsize=(18, 18))
     monitor = ax.imshow(weights, interpolation="nearest", vmin=0,
                         vmax=max_weight, cmap=cmap.get_cmap('hot_r'))
@@ -390,7 +390,7 @@ def main(test_mode=True):
                                                        on_pre=pre,
                                                        on_post=post)
             conn.connect()  # all-to-all connection
-            conn.w = weightMatrix[conn.i, conn.j]
+            conn.w = weightMatrix.flatten()
 
         log.info(f'Creating monitors for {name}')
         rate_monitors[subpop_e] = b2.PopulationRateMonitor(nge)
@@ -452,7 +452,7 @@ def main(test_mode=True):
             maxDelay = delay[connType][1]
             deltaDelay = maxDelay - minDelay
             conn.delay = 'minDelay + rand() * deltaDelay'
-            conn.w = weightMatrix[conn.i, conn.j]
+            conn.w = weightMatrix.flatten()
             if ee_STDP_on:
                 pass
                 # small amount is added to avoid division by zero
@@ -485,7 +485,7 @@ def main(test_mode=True):
     #-------------------------------------------------------------------------
     # save results
     #-------------------------------------------------------------------------
-    print('save results')
+    log.info('Saving results')
     if not test_mode:
         save_theta(population_names, neuron_groups)
     if not test_mode:
