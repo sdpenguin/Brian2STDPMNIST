@@ -218,14 +218,14 @@ def main(test_mode=True):
     if test_mode:
         random_weights = False
         data = testing
-        num_epochs = 0.001  #1
+        num_epochs = 0.1  #1
         plot_performance = False
         plot_weights = False
         ee_STDP_on = False
     else:
         random_weights = True
         data = training
-        num_epochs = 0.01  #3
+        num_epochs = 0.1  #3
         plot_performance = True
         plot_weights = True
         ee_STDP_on = True
@@ -306,8 +306,9 @@ def main(test_mode=True):
             I_synE = ge * nS * -v  : amp
             I_synI = gi * nS * (-100.*mV-v)  : amp
             dge/dt = -ge/(1.0*ms)  : 1
-            dgi/dt = -gi/(2.0*ms)  :1
+            dgi/dt = -gi/(2.0*ms)  : 1
             dtimer/dt = 0.1  : second
+            wtot  : 1
             '''
     if test_mode:
         neuron_eqs_e += '\n  theta  :volt'
@@ -401,11 +402,28 @@ def main(test_mode=True):
             spike_monitors[subpop_i] = b2.SpikeMonitor(ngi)
 
     #-------------------------------------------------------------------------
+    # create TimedArray of rates for input examples
+    #-------------------------------------------------------------------------
+    input_dt = 5 * b2.ms
+    n_dt_example = int(single_example_time / input_dt)
+    n_dt_rest = int(resting_time / input_dt)
+    n_dt_total = int(n_dt_example + n_dt_rest)
+    input_rates = np.zeros((num_examples * n_dt_total, n_input))
+    log.info('Preparing input rate stream {}'.format(input_rates.shape))
+    for j in range(num_examples):
+        spike_rates = data['x'][j % len(data)].reshape(n_input) / 8
+        spike_rates *= input_intensity
+        start = j * n_dt_total
+        input_rates[start:start + n_dt_example] = spike_rates
+    input_rates = input_rates * b2.Hz
+    stimulus = b2.TimedArray(input_rates, dt=input_dt)
+
+    #-------------------------------------------------------------------------
     # create input population and connections from input populations
     #-------------------------------------------------------------------------
-    for i, name in enumerate(input_population_names):
+    for k, name in enumerate(input_population_names):
         subpop_e = name + 'e'
-        input_groups[subpop_e] = b2.PoissonGroup(n_input, 0 * b2.Hz)
+        input_groups[subpop_e] = b2.PoissonGroup(n_input, rates='stimulus(t, i)')
         rate_monitors[subpop_e] = b2.PopulationRateMonitor(input_groups[subpop_e])
 
     for name in input_connection_names:
@@ -414,7 +432,8 @@ def main(test_mode=True):
             log.debug(f'connType {connType} of {input_conntype_names}')
             connName = name[0] + connType[0] + name[1] + connType[1]
             weightMatrix = load_connections(connName, random=random_weights)
-            model = 'w : 1'
+            model = '''w : 1
+                       wtot_post = w : 1 (summed)'''
             pre = 'g%s_post += w' % connType[0]
             post = ''
             if ee_STDP_on:
@@ -434,6 +453,9 @@ def main(test_mode=True):
             deltaDelay = maxDelay - minDelay
             conn.delay = 'minDelay + rand() * deltaDelay'
             conn.w = weightMatrix[conn.i, conn.j]
+            # small amount is added to avoid division by zero
+            conn.run_regularly("w = w * {} / (wtot_post + 0.001)".format(weight['ee_input']),
+                               dt=(single_example_time + resting_time))
 
     #-------------------------------------------------------------------------
     # run the simulation and set inputs
@@ -453,55 +475,37 @@ def main(test_mode=True):
         input_weight_monitor = create_2d_input_weights_plot(connections, wmax_ee)
     if plot_performance:
         performance_monitor = create_performance_plot()
-    for i, name in enumerate(input_population_names):
-        input_groups[name + 'e'].rates = 0 * b2.Hz
     log.info('Starting simulations')
-    net.run(0 * b2.second)
     j = 0
-    while j < (int(num_examples)):
-        log.debug(f'run number {j+1} of {int(num_examples)}')
-        if not test_mode:
-            normalize_weights(connections, weight)
-        spike_rates = data['x'][j % len(data)].reshape(n_input) / 8
-        spike_rates *= input_intensity
-        input_groups['Xe'].rates = spike_rates * b2.Hz
-        net.run(single_example_time, report=None)
+    while j < int(num_examples / config.update_interval):
+        jex = j * config.update_interval
+        log.info('runs done: {} of {}'.format(jex,
+                                              int(num_examples)))
+        net.run(config.update_interval * n_dt_example * input_dt,
+                report='text', report_period=(60 * b2.second))
 
-        if j % config.update_interval == 0 and j > 0:
+        if jex % config.update_interval == 0 and jex > 0:
             assignments = get_new_assignments(
-                result_monitor, input_labels[j - config.update_interval: j])
-        if j % weight_update_interval == 0 and plot_weights:
+                result_monitor, input_labels[jex - config.update_interval: jex])
+        if jex % weight_update_interval == 0 and plot_weights:
             update_2d_input_weights_plot(input_weight_monitor, connections)
-        if j % save_connections_interval == 0 and j > 0 and not test_mode:
+        if jex % save_connections_interval == 0 and jex > 0 and not test_mode:
             save_connections(connections)
             save_theta(population_names, neuron_groups)
 
         current_spike_count = np.asarray(
             spike_counters['Ae'].count[:]) - previous_spike_count
-        previous_spike_count = np.copy(spike_counters['Ae'].count[:])
-        if np.sum(current_spike_count) < min_spike_count:
-            input_intensity += 1
-            for i, name in enumerate(input_population_names):
-                input_groups[name + 'e'].rates = 0 * b2.Hz
-            net.run(resting_time)
-        else:
-            result_monitor[j % config.update_interval, :] = current_spike_count
-            input_labels[j] = data['y'][j % len(data)]
-            predicted_class_ranking[j, :] = get_predicted_class_ranking(
-                assignments, result_monitor[j % config.update_interval, :])
-            if j % 100 == 0 and j > 0:
-                log.info('runs done:', j, 'of', int(num_examples))
-            if j % config.update_interval == 0 and j > 0 and plot_performance:
-                performance = update_performance_plot(
-                    performance_monitor, j,
-                    predicted_class_ranking,
-                    input_labels)
-                print('Classification performance', performance)
-            for i, name in enumerate(input_population_names):
-                input_groups[name + 'e'].rates = 0 * b2.Hz
-            net.run(resting_time)
-            input_intensity = start_input_intensity
-            j += 1
+        result_monitor[j % config.update_interval, :] = current_spike_count
+        input_labels[j] = data['y'][j % len(data)]
+        predicted_class_ranking[j, :] = get_predicted_class_ranking(
+            assignments, result_monitor[j % config.update_interval, :])
+        if j % config.update_interval == 0 and j > 0 and plot_performance:
+            performance = update_performance_plot(
+                performance_monitor, j,
+                predicted_class_ranking,
+                input_labels)
+            print('Classification performance', performance)
+        j += 1
 
     #-------------------------------------------------------------------------
     # save results
