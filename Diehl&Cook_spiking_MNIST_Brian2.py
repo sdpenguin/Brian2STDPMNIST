@@ -432,8 +432,8 @@ def main(test_mode=True):
             log.debug(f'connType {connType} of {input_conntype_names}')
             connName = name[0] + connType[0] + name[1] + connType[1]
             weightMatrix = load_connections(connName, random=random_weights)
-            model = '''w : 1
-                       wtot_post = w : 1 (summed)'''
+            model = 'w : 1'
+            #model += '\n wtot_post = w : 1 (summed)'
             pre = 'g%s_post += w' % connType[0]
             post = ''
             if ee_STDP_on:
@@ -454,11 +454,10 @@ def main(test_mode=True):
             conn.delay = 'minDelay + rand() * deltaDelay'
             conn.w = weightMatrix[conn.i, conn.j]
             if ee_STDP_on:
+                pass
                 # small amount is added to avoid division by zero
-                norm_weights = b2.Equations('w = w * wmax / (wtot_post + 0.001)',
-                                         wmax=weight['ee_input'])
-                conn.run_regularly(norm_weights,
-                                   dt=(single_example_time + resting_time))
+                #conn.run_regularly('w *= {} / (wtot_post + 0.001)'.format(weight['ee_input']),
+                #                   dt=(single_example_time + resting_time))
 
     #-------------------------------------------------------------------------
     # run the simulation and set inputs
