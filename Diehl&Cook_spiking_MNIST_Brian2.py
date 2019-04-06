@@ -480,7 +480,10 @@ def main(test_mode=True):
         performance_monitor = create_performance_plot()
     log.info('Starting simulations')
     net.run(runtime,
-            report='text', report_period=(60 * b2.second))
+            report='text', report_period=(60 * b2.second),
+            profile=False)
+
+    #print(b2.profiling_summary(net, 10))
 
     #-------------------------------------------------------------------------
     # save results
