@@ -218,14 +218,14 @@ def main(test_mode=True):
     if test_mode:
         random_weights = False
         data = testing
-        num_epochs = 0.1  #1
+        num_epochs = 1
         plot_performance = False
         plot_weights = False
         ee_STDP_on = False
     else:
         random_weights = True
         data = training
-        num_epochs = 0.1  #3
+        num_epochs = 3
         plot_performance = True
         plot_weights = True
         ee_STDP_on = True
@@ -476,36 +476,8 @@ def main(test_mode=True):
     if plot_performance:
         performance_monitor = create_performance_plot()
     log.info('Starting simulations')
-    j = 0
-    while j < int(num_examples / config.update_interval):
-        jex = j * config.update_interval
-        log.info('runs done: {} of {}'.format(jex,
-                                              int(num_examples)))
-        net.run(config.update_interval * n_dt_example * input_dt,
-                report='text', report_period=(60 * b2.second))
-
-        if jex % config.update_interval == 0 and jex > 0:
-            assignments = get_new_assignments(
-                result_monitor, input_labels[jex - config.update_interval: jex])
-        if jex % weight_update_interval == 0 and plot_weights:
-            update_2d_input_weights_plot(input_weight_monitor, connections)
-        if jex % save_connections_interval == 0 and jex > 0 and not test_mode:
-            save_connections(connections)
-            save_theta(population_names, neuron_groups)
-
-        current_spike_count = np.asarray(
-            spike_counters['Ae'].count[:]) - previous_spike_count
-        result_monitor[j % config.update_interval, :] = current_spike_count
-        input_labels[j] = data['y'][j % len(data)]
-        predicted_class_ranking[j, :] = get_predicted_class_ranking(
-            assignments, result_monitor[j % config.update_interval, :])
-        if j % config.update_interval == 0 and j > 0 and plot_performance:
-            performance = update_performance_plot(
-                performance_monitor, j,
-                predicted_class_ranking,
-                input_labels)
-            print('Classification performance', performance)
-        j += 1
+    net.run(runtime,
+            report='text', report_period=(60 * b2.second))
 
     #-------------------------------------------------------------------------
     # save results
