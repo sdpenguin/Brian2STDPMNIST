@@ -144,7 +144,7 @@ def update_2d_input_weights_plot(monitor, connections):
     weights = get_2d_input_weights(connections)
     monitor.set_array(weights)
     fig = monitor.axes.figure
-    fig.savefig(os.path.join(figure_path, 'input_weights.pdf'))
+    fig.savefig(os.path.join(config.figure_path, 'input_weights.pdf'))
 
 
 def get_current_performance(pred_ranking, labels):
@@ -173,7 +173,7 @@ def update_performance_plot(monitor, current_step, pred_ranking, labels):
     performance.append(current_perf)
     monitor.set_data(timestep, performance)
     fig = monitor.axes.figure
-    fig.savefig(os.path.join(figure_path, 'performance.pdf'))
+    fig.savefig(os.path.join(config.figure_path, 'performance.pdf'))
     return performance
 
 
@@ -213,9 +213,13 @@ def main(test_mode=True, runname=''):
     config.data_path = './'
     config.random_weight_path = 'random/'
     config.weight_path = os.path.join(runname, 'weights/')
-    runname += '/test' if testmode else '/train'
+    os.makedirs(config.weight_path, exist_ok=True)
+    runname += 'test' if test_mode else 'train'
+    log.info('Running {}'.format(runname))
     config.figure_path = os.path.join(runname, 'figures/')
+    os.makedirs(config.figure_path, exist_ok=True)
     config.output_path = os.path.join(runname, 'activity/')
+    os.makedirs(config.output_path, exist_ok=True)
     if test_mode:
         random_weights = False
         data = testing
@@ -485,7 +489,7 @@ def main(test_mode=True, runname=''):
             report='text', report_period=(60 * b2.second),
             profile=False)
 
-    b2.device.build(directory=os.path('build', runname),
+    b2.device.build(directory=os.path.join('build', runname),
                     compile=True, run=True, debug=False)
 
     #print(b2.profiling_summary(net, 10))
@@ -557,8 +561,8 @@ def main(test_mode=True, runname=''):
     fig.set_tight_layout(True)
     b2.savefig(os.path.join(config.figure_path, 'counts.pdf'))
 
-    input_weight_monitor = create_2d_input_weights_plot(connections)
-    update_2d_input_weights_plot(input_weight_monitor, connections)
+    input_weight_plot = create_2d_input_weights_plot(connections)
+    update_2d_input_weights_plot(input_weight_plot, connections)
 
     fig = b2.figure(figsize=(5, 10))
     b2.subplot(3, 1, 1)
