@@ -226,13 +226,15 @@ def main(test_mode=True, runname=''):
         num_epochs = 1
         plot_performance = False
         plot_weights = False
+        record_input_weights = False
         ee_STDP_on = False
     else:
         random_weights = True
         data = training
-        num_epochs = 3
+        num_epochs = 0.01
         plot_performance = True
         plot_weights = True
+        record_input_weights = True
         ee_STDP_on = True
 
     min_spike_count = 5
@@ -245,6 +247,9 @@ def main(test_mode=True, runname=''):
 
     num_examples = int(len(data['y']) * num_epochs)
     n_input = data['x'][0].size
+    n_data = data['y'].size
+    if num_epochs < 1:
+        n_data = int(np.ceil(n_data * num_epochs))
 
     #-------------------------------------------------------------------------
     # set parameters and equations
@@ -342,6 +347,7 @@ def main(test_mode=True, runname=''):
     rate_monitors = {}
     spike_monitors = {}
     spike_counters = {}
+    state_monitors = {}
     result_monitor = np.zeros((config.update_interval, n_e))
 
     neuron_groups['e'] = b2.NeuronGroup(n_e * len(population_names),
@@ -378,19 +384,21 @@ def main(test_mode=True, runname=''):
             neuron_groups['e'].theta = np.ones(n_e) * 20.0 * b2.mV
 
         log.info(f'Creating recurrent connections')
-        for conn_type in recurrent_conntype_names:
-            connName = name + conn_type[0] + name + conn_type[1]
+        for connType in recurrent_conntype_names:
+            preName = name + connType[0]
+            postName = name + connType[1]
+            connName = preName + postName
             weightMatrix = load_connections(connName, random=True)
             model = 'w : 1'
-            pre = 'g%s_post += w' % conn_type[0]
+            pre = 'g%s_post += w' % connType[0]
             post = ''
             if ee_STDP_on:
                 if 'ee' in recurrent_conntype_names:
                     model += eqs_stdp_ee
                     pre += '; ' + eqs_stdp_pre_ee
                     post = eqs_stdp_post_ee
-            conn = connections[connName] = b2.Synapses(neuron_groups[connName[:2]],
-                                                       neuron_groups[connName[2:]],
+            conn = connections[connName] = b2.Synapses(neuron_groups[preName],
+                                                       neuron_groups[postName],
                                                        model=model,
                                                        on_pre=pre,
                                                        on_post=post)
@@ -413,33 +421,38 @@ def main(test_mode=True, runname=''):
     n_dt_example = int(single_example_time / input_dt)
     n_dt_rest = int(resting_time / input_dt)
     n_dt_total = int(n_dt_example + n_dt_rest)
-    input_rates = np.zeros((num_examples * n_dt_total, n_input),
+    input_rates = np.zeros((n_data * n_dt_total, n_input),
                            dtype=np.float16)
     log.info('Preparing input rate stream {}'.format(input_rates.shape))
-    for j in range(num_examples):
-        spike_rates = data['x'][j % len(data)].reshape(n_input) / 8
+    for j in range(n_data):
+        spike_rates = data['x'][j].reshape(n_input) / 8
         spike_rates *= input_intensity
         start = j * n_dt_total
         input_rates[start:start + n_dt_example] = spike_rates
     input_rates = input_rates * b2.Hz
     stimulus = b2.TimedArray(input_rates, dt=input_dt)
+    total_data_time = n_data * n_dt_total * input_dt
 
     #-------------------------------------------------------------------------
     # create input population and connections from input populations
     #-------------------------------------------------------------------------
     for k, name in enumerate(input_population_names):
         subpop_e = name + 'e'
-        input_groups[subpop_e] = b2.PoissonGroup(n_input, rates='stimulus(t, i)')
+        input_groups[subpop_e] = b2.PoissonGroup(
+            n_input,
+            rates='stimulus(t%total_data_time, i)')
         rate_monitors[subpop_e] = b2.PopulationRateMonitor(input_groups[subpop_e])
 
     for name in input_connection_names:
         log.info(f'Creating connections between {name[0]} and {name[1]}')
         for connType in input_conntype_names:
             log.debug(f'connType {connType} of {input_conntype_names}')
-            connName = name[0] + connType[0] + name[1] + connType[1]
+            preName = name[0] + connType[0]
+            postName = name[1] + connType[1]
+            connName = preName + postName
             weightMatrix = load_connections(connName, random=random_weights)
             model = 'w : 1'
-            model += '\n wtot_post = w : 1 (summed)'
+            #model += '\n wtot_post = w : 1 (summed)'
             pre = 'g%s_post += w' % connType[0]
             post = ''
             if ee_STDP_on:
@@ -448,8 +461,8 @@ def main(test_mode=True, runname=''):
                 pre += '; ' + eqs_stdp_pre_ee
                 post = eqs_stdp_post_ee
 
-            conn = connections[connName] = b2.Synapses(input_groups[connName[:2]],
-                                                       neuron_groups[connName[2:]],
+            conn = connections[connName] = b2.Synapses(input_groups[preName],
+                                                       neuron_groups[postName],
                                                        model=model,
                                                        on_pre=pre,
                                                        on_post=post)
@@ -460,10 +473,18 @@ def main(test_mode=True, runname=''):
             conn.delay = 'minDelay + rand() * deltaDelay'
             conn.w = weightMatrix.flatten()
             if ee_STDP_on:
+                pass
                 # normalize weights
                 # small amount is added to avoid division by zero
-                conn.run_regularly('w *= {} / (wtot_post + 0.001)'.format(weight['ee_input']),
-                                   dt=(single_example_time + resting_time))
+                #conn.run_regularly('w *= {} / (wtot_post + 0.001)'.format(weight['ee_input']),
+                #                   dt=(single_example_time + resting_time))
+
+            if record_input_weights:
+                weight_update_dt = (weight_update_interval *
+                                    (single_example_time + resting_time))
+                state_monitors[connName] = b2.StateMonitor(conn, 'w',
+                                                           record=np.arange(n_input * n_e),
+                                                           dt=weight_update_dt)
 
     #-------------------------------------------------------------------------
     # run the simulation and set inputs
@@ -472,7 +493,7 @@ def main(test_mode=True, runname=''):
     net = b2.Network()
     primary_neuron_groups = {p: neuron_groups[p] for p in neuron_groups if len(p) == 1}
     for obj_list in [neuron_groups, input_groups, connections, rate_monitors,
-                     spike_monitors, spike_counters]:
+                     spike_monitors, spike_counters, state_monitors]:
         for key in obj_list:
             net.add(obj_list[key])
 
@@ -481,9 +502,9 @@ def main(test_mode=True, runname=''):
     input_labels = [0] * num_examples
     predicted_class_ranking = np.zeros((num_examples, config.num_classes))
     if plot_weights:
-        input_weight_monitor = create_2d_input_weights_plot(connections, wmax_ee)
+        input_weight_plot = create_2d_input_weights_plot(connections, wmax_ee)
     if plot_performance:
-        performance_monitor = create_performance_plot()
+        performance_plot = create_performance_plot()
     log.info('Starting simulations')
     net.run(runtime,
             report='text', report_period=(60 * b2.second),
@@ -509,6 +530,10 @@ def main(test_mode=True, runname=''):
         np.save(os.path.join(config.output_path,
                              'inputLabels{}'.format(num_examples)),
                 input_labels)
+        if record_input_weights:
+            np.savez(os.path.join(config.output_path,
+                                  'inputWeights{}'.format(num_examples)),
+                     (state_monitors['XeAe'].t, state_monitors['XeAe'].w))
         assignments = get_new_assignments(result_monitor, input_labels)
         predictions = np.zeros(len(result_monitor))
         for k, spike_rates in enumerate(result_monitor):
