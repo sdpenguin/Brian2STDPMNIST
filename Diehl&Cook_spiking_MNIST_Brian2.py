@@ -409,7 +409,8 @@ def main(test_mode=True, runname=''):
     n_dt_example = int(single_example_time / input_dt)
     n_dt_rest = int(resting_time / input_dt)
     n_dt_total = int(n_dt_example + n_dt_rest)
-    input_rates = np.zeros((num_examples * n_dt_total, n_input))
+    input_rates = np.zeros((num_examples * n_dt_total, n_input),
+                           dtype=np.float16)
     log.info('Preparing input rate stream {}'.format(input_rates.shape))
     for j in range(num_examples):
         spike_rates = data['x'][j % len(data)].reshape(n_input) / 8
