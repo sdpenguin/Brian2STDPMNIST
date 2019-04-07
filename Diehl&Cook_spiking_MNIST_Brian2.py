@@ -34,7 +34,7 @@ import brian2tools as b2t
 from keras.datasets import mnist
 import pickle
 
-b2.set_device('cpp_standalone')
+b2.set_device('cpp_standalone', build_on_run=False)
 
 class config:
     # a global object to store configuration info
@@ -66,7 +66,7 @@ def load_connections(connName, random=True):
     else:
         path = config.weight_path
     filename = os.path.join(config.data_path, path,
-                            '{}{}.npy'.format(connName, config.ending))
+                            '{}.npy'.format(connName))
     return get_matrix_from_file(filename)
 
 
@@ -76,15 +76,14 @@ def save_connections(connections):
         conn = connections[connName]
         connListSparse = list(zip(conn.i, conn.j, conn.w))
         filename = os.path.join(config.data_path, config.weight_path,
-                                '{}{}'.format(connName, config.ending))
+                                '{}'.format(connName))
         np.save(filename, connListSparse)
 
 
 def load_theta(population_name):
     log.info('Loading theta for population {}'.format(population_name))
     filename = os.path.join(config.data_path, config.weight_path,
-                            'theta_{}{}.npy'.format(population_name,
-                                                    config.ending))
+                            'theta_{}.npy'.format(population_name))
     return np.load(filename) * b2.volt
 
 
@@ -92,8 +91,7 @@ def save_theta(population_names, neuron_groups):
     log.info('Saving theta')
     for pop_name in population_names:
         filename = os.path.join(config.data_path, config.weight_path,
-                                'theta_{}{}'.format(pop_name,
-                                                    config.ending))
+                                'theta_{}'.format(pop_name))
         np.save(filename, neuron_groups[pop_name + 'e'].theta)
 
 
@@ -146,7 +144,7 @@ def update_2d_input_weights_plot(monitor, connections):
     weights = get_2d_input_weights(connections)
     monitor.set_array(weights)
     fig = monitor.axes.figure
-    fig.savefig('figures/input_weights.pdf')
+    fig.savefig(os.path.join(figure_path, 'input_weights.pdf'))
 
 
 def get_current_performance(pred_ranking, labels):
@@ -175,7 +173,7 @@ def update_performance_plot(monitor, current_step, pred_ranking, labels):
     performance.append(current_perf)
     monitor.set_data(timestep, performance)
     fig = monitor.axes.figure
-    fig.savefig('figures/performance.pdf')
+    fig.savefig(os.path.join(figure_path, 'performance.pdf'))
     return performance
 
 
@@ -202,8 +200,8 @@ def get_new_assignments(result_monitor, input_labels):
     return assignments
 
 
-def main(test_mode=True):
-    config.ending = ''
+def main(test_mode=True, runname=''):
+    runname = runname
 
     # load MNIST
     training, testing = get_labeled_data()
@@ -214,7 +212,10 @@ def main(test_mode=True):
     np.random.seed(0)
     config.data_path = './'
     config.random_weight_path = 'random/'
-    config.weight_path = 'weights/'
+    config.weight_path = os.path.join(runname, 'weights/')
+    runname += '/test' if testmode else '/train'
+    config.figure_path = os.path.join(runname, 'figures/')
+    config.output_path = os.path.join(runname, 'activity/')
     if test_mode:
         random_weights = False
         data = testing
@@ -483,6 +484,9 @@ def main(test_mode=True):
             report='text', report_period=(60 * b2.second),
             profile=False)
 
+    b2.device.build(directory=os.path('build', runname),
+                    compile=True, run=True, debug=False)
+
     #print(b2.profiling_summary(net, 10))
 
     #-------------------------------------------------------------------------
@@ -494,14 +498,27 @@ def main(test_mode=True):
     if not test_mode:
         save_connections(connections)
     else:
-        np.save(config.data_path + 'activity/resultPopVecs' +
-                str(num_examples), result_monitor)
-        np.save(config.data_path + 'activity/inputLabels' +
-                str(num_examples), input_labels)
+        np.save(os.path.join(config.output_path,
+                             'resultPopVecs{}'.format(num_examples)),
+                result_monitor)
+        np.save(os.path.join(config.output_path,
+                             'inputLabels{}'.format(num_examples)),
+                input_labels)
+        assignments = get_new_assignments(result_monitor, input_labels)
+        predictions = np.zeros(len(result_monitor))
+        for k, spike_rates in enumerate(result_monitor):
+            ranking = get_predicted_class_ranking(assignments, spike_rates)
+            predictions[k] = ranking[0]
+        np.save(os.path.join(config.output_path,
+                             'assignments{}'.format(num_examples)),
+                assignments)
+        np.save(os.path.join(config.output_path,
+                             'predictions{}'.format(num_examples)),
+                predictions)
 
 #    saveobj = {'rate_monitors': rate_monitors,
 #               'spike_monitors': spike_monitors}
-#    with open('saved{}.pickle'.format(config.ending), 'w') as f:
+#    with open('saved.pickle', 'w') as f:
 #        pickle.dump(saveobj, f)
 
     #-------------------------------------------------------------------------
@@ -517,7 +534,7 @@ def main(test_mode=True):
         b2.plot(t[::sample], rate[::sample], '-')
         b2.title('Rates of population ' + name)
     fig.set_tight_layout(True)
-    b2.savefig('figures/rates.pdf')
+    b2.savefig(os.path.join(config.figure_path, 'rates.pdf'))
 
     fig = b2.figure()
     for i, name in enumerate(spike_monitors):
@@ -530,14 +547,14 @@ def main(test_mode=True):
         b2.plot(t, idx, '.')
         b2.title('Spikes of population ' + name)
     fig.set_tight_layout(True)
-    b2.savefig('figures/spikes.pdf')
+    b2.savefig(os.path.join(config.figure_path, 'spikes.pdf'))
 
 
     fig = b2.figure()
     b2.plot(spike_monitors['Ae'].count[:])
     b2.title('Spike count of population Ae')
     fig.set_tight_layout(True)
-    b2.savefig('figures/counts.pdf')
+    b2.savefig(os.path.join(config.figure_path, 'counts.pdf'))
 
     input_weight_monitor = create_2d_input_weights_plot(connections)
     update_2d_input_weights_plot(input_weight_monitor, connections)
@@ -550,7 +567,7 @@ def main(test_mode=True):
     b2.subplot(3, 1, 3)
     b2t.brian_plot(connections['AiAe'].w)
     fig.set_tight_layout(True)
-    b2.savefig('figures/connections.pdf')
+    b2.savefig(os.path.join(config.figure_path, 'connections.pdf'))
 
 
 if __name__ == '__main__':
@@ -565,6 +582,7 @@ if __name__ == '__main__':
                             help='Enable test mode')
     mode_group.add_argument('--train', dest='test_mode', action='store_false',
                             help='Enable train mode')
+    parser.add_argument('--runname', default='')
     args = parser.parse_args()
 
-    sys.exit(main(test_mode=args.test_mode))
+    sys.exit(main(test_mode=args.test_mode, runname=args.runname))
