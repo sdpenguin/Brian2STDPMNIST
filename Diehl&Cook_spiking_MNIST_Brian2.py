@@ -36,6 +36,7 @@ import pickle
 
 b2.set_device('cpp_standalone', build_on_run=False)
 
+
 class config:
     # a global object to store configuration info
     pass
@@ -190,7 +191,7 @@ def get_new_assignments(result_monitor, input_labels):
     input_labels = np.asarray(input_labels)
     n_e = result_monitor.shape[1]
     # average rates over all examples for each class
-    rates = np.zeros(config.num_classes, n_e)
+    rates = np.zeros((config.num_classes, n_e))
     for j in range(config.num_classes):
         num_labels = (input_labels == j).sum()
         if num_labels > 0:
@@ -223,7 +224,7 @@ def main(test_mode=True, runname=''):
     if test_mode:
         random_weights = False
         data = testing
-        num_epochs = 1
+        num_epochs = 0.1
         plot_performance = False
         plot_weights = False
         record_input_weights = False
@@ -250,10 +251,16 @@ def main(test_mode=True, runname=''):
     n_data = data['y'].size
     if num_epochs < 1:
         n_data = int(np.ceil(n_data * num_epochs))
+        data['x'] = data['x'][:n_data]
+        data['y'] = data['y'][:n_data]
 
     #-------------------------------------------------------------------------
     # set parameters and equations
     #-------------------------------------------------------------------------
+    log.info('Original defaultclock.dt = {}'.format(str(b2.defaultclock.dt)))
+    b2.defaultclock.dt = 0.5 * b2.ms
+    log.info('New defaultclock.dt = {}'.format(str(b2.defaultclock.dt)))
+
     n_e = 400
     n_i = n_e
 
@@ -348,7 +355,6 @@ def main(test_mode=True, runname=''):
     spike_monitors = {}
     spike_counters = {}
     state_monitors = {}
-    result_monitor = np.zeros((config.update_interval, n_e))
 
     neuron_groups['e'] = b2.NeuronGroup(n_e * len(population_names),
                                         neuron_eqs_e,
@@ -497,14 +503,6 @@ def main(test_mode=True, runname=''):
         for key in obj_list:
             net.add(obj_list[key])
 
-    previous_spike_count = np.zeros(n_e)
-    assignments = np.zeros(n_e)
-    input_labels = [0] * num_examples
-    predicted_class_ranking = np.zeros((num_examples, config.num_classes))
-    if plot_weights:
-        input_weight_plot = create_2d_input_weights_plot(connections, wmax_ee)
-    if plot_performance:
-        performance_plot = create_performance_plot()
     log.info('Starting simulations')
     net.run(runtime,
             report='text', report_period=(60 * b2.second),
@@ -529,12 +527,12 @@ def main(test_mode=True, runname=''):
                 result_monitor)
         np.save(os.path.join(config.output_path,
                              'inputLabels{}'.format(num_examples)),
-                input_labels)
+                data['y'])
         if record_input_weights:
             np.savez(os.path.join(config.output_path,
                                   'inputWeights{}'.format(num_examples)),
                      (state_monitors['XeAe'].t, state_monitors['XeAe'].w))
-        assignments = get_new_assignments(result_monitor, input_labels)
+        assignments = get_new_assignments(result_monitor, data['y'])
         predictions = np.zeros(len(result_monitor))
         for k, spike_rates in enumerate(result_monitor):
             ranking = get_predicted_class_ranking(assignments, spike_rates)
