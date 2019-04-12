@@ -22,15 +22,10 @@ logging.captureWarnings(True)
 log = logging.getLogger('spiking-mnist')
 log.setLevel(logging.DEBUG)
 
-import matplotlib as mpl
-mpl.use('PDF')
-
 import os.path
 import numpy as np
-import matplotlib.cm as cmap
 from scipy import sparse
 import brian2 as b2
-import brian2tools as b2t
 from keras.datasets import mnist
 import pickle
 
@@ -109,99 +104,7 @@ def normalize_weights(connections, weight):
             conn.w = connweights.flatten()
 
 
-def get_2d_input_weights(connections, blank=False):
-    conn = connections['XeAe']
-    n_input = len(conn.source)
-    n_e = len(conn.target)
-    n_e_sqrt = int(np.sqrt(n_e))
-    n_in_sqrt = int(np.sqrt(n_input))
-    num_values_col = n_e_sqrt * n_in_sqrt
-    num_values_row = num_values_col
-    rearranged_weights = np.zeros((num_values_col, num_values_row))
-    if not blank:
-        weights = np.reshape(conn.w, (n_input, n_e))
-        for i in range(n_e_sqrt):
-            for j in range(n_e_sqrt):
-                wk = weights[:, i + j * n_e_sqrt].reshape((n_in_sqrt, n_in_sqrt))
-                rearranged_weights[i * n_in_sqrt: (i + 1) * n_in_sqrt,
-                                   j * n_in_sqrt: (j + 1) * n_in_sqrt] = wk
-    return rearranged_weights
-
-
-def create_2d_input_weights_plot(connections, max_weight=1.0):
-    name = 'XeAe'
-    weights = get_2d_input_weights(connections, blank=True)
-    fig, ax = b2.subplots(figsize=(18, 18))
-    monitor = ax.imshow(weights, interpolation="nearest", vmin=0,
-                        vmax=max_weight, cmap=cmap.get_cmap('hot_r'))
-    b2.colorbar(monitor)
-    b2.title('weights of connection' + name)
-    fig.set_tight_layout(True)
-    return monitor
-
-
-def update_2d_input_weights_plot(monitor, connections):
-    log.info('Updating 2d input weights plot')
-    weights = get_2d_input_weights(connections)
-    monitor.set_array(weights)
-    fig = monitor.axes.figure
-    fig.savefig(os.path.join(config.figure_path, 'input_weights.pdf'))
-
-
-def get_current_performance(pred_ranking, labels):
-    prediction = pred_ranking[-config.update_interval:, 0]
-    labels = labels[-config.update_interval:]
-    correct = prediction == labels
-    return 100 * correct.mean()
-
-
-def create_performance_plot():
-    fig, ax = b2.subplots(figsize=(5, 5))
-    monitor, = ax.plot([])
-    ax.set_xlabel('time step')
-    ax.set_ylabel('accuracy')
-    ax.set_ylim(top=100)
-    ax.set_title('Classification performance')
-    fig.set_tight_layout(True)
-    return monitor
-
-
-def update_performance_plot(monitor, current_step, pred_ranking, labels):
-    log.info('Updating performance plot')
-    current_perf = get_current_performance(pred_ranking, labels)
-    timestep, performance = [i.tolist() for i in monitor.get_data()]
-    timestep.append(current_perf)
-    performance.append(current_perf)
-    monitor.set_data(timestep, performance)
-    fig = monitor.axes.figure
-    fig.savefig(os.path.join(config.figure_path, 'performance.pdf'))
-    return performance
-
-
-def get_predicted_class_ranking(assignments, spike_rates):
-    mean_rates = np.zeros(config.num_classes)
-    for i in range(config.num_classes):
-        num_assignments = (assignments == i).sum()
-        if num_assignments > 0:
-            mean_rates[i] = spike_rates[assignments == i].mean()
-    return np.argsort(mean_rates)[::-1]
-
-
-def get_new_assignments(result_monitor, input_labels):
-    input_labels = np.asarray(input_labels)
-    n_e = result_monitor.shape[1]
-    # average rates over all examples for each class
-    rates = np.zeros((config.num_classes, n_e))
-    for j in range(config.num_classes):
-        num_labels = (input_labels == j).sum()
-        if num_labels > 0:
-            rates[j] = np.mean(result_monitor[input_labels == j], axis=0)
-    # assign each neuron to the class producing the highest average rate
-    assignments = rates.argmax(axis=1)
-    return assignments
-
-
-def main(test_mode=True, runname=''):
+def main(test_mode=True, runname='', profile=False):
     runname = runname
 
     # load MNIST
@@ -215,36 +118,24 @@ def main(test_mode=True, runname=''):
     config.random_weight_path = 'random/'
     config.weight_path = os.path.join(runname, 'weights/')
     os.makedirs(config.weight_path, exist_ok=True)
-    runname += 'test' if test_mode else 'train'
     log.info('Running {}'.format(runname))
-    config.figure_path = os.path.join(runname, 'figures/')
-    os.makedirs(config.figure_path, exist_ok=True)
-    config.output_path = os.path.join(runname, 'activity/')
+    config.output_path = os.path.join(runname, 'output/')
     os.makedirs(config.output_path, exist_ok=True)
+
     if test_mode:
         random_weights = False
         data = testing
-        num_epochs = 0.1
-        plot_performance = False
-        plot_weights = False
-        record_input_weights = False
+        num_epochs = 1
+        record_weights_interval = None
         ee_STDP_on = False
     else:
         random_weights = True
         data = training
-        num_epochs = 0.01
-        plot_performance = True
-        plot_weights = True
-        record_input_weights = True
+        num_epochs = 1  # 3
+        record_weights_interval = 100
         ee_STDP_on = True
 
-    min_spike_count = 5
-
     record_spikes = True
-
-    config.update_interval = 1000
-    weight_update_interval = 100
-    save_connections_interval = 10000
 
     num_examples = int(len(data['y']) * num_epochs)
     n_input = data['x'][0].size
@@ -266,16 +157,8 @@ def main(test_mode=True, runname=''):
 
     single_example_time = 0.35 * b2.second
     resting_time = 0.15 * b2.second
-    runtime = num_examples * (single_example_time + resting_time)
-
-    v_rest_e = -65. * b2.mV
-    v_rest_i = -60. * b2.mV
-    v_reset_e = -65. * b2.mV
-    v_reset_i = -45. * b2.mV
-    v_thresh_e = -52. * b2.mV
-    v_thresh_i = -40. * b2.mV
-    refrac_e = 5. * b2.ms
-    refrac_i = 2. * b2.ms
+    total_example_time = single_example_time + resting_time
+    runtime = num_examples * total_example_time
 
     input_population_names = ['X']
     population_names = ['A']
@@ -292,7 +175,15 @@ def main(test_mode=True, runname=''):
     delay['ei_input'] = (0 * b2.ms, 5 * b2.ms)
 
     input_intensity = 2.
-    start_input_intensity = input_intensity
+
+    v_rest_e = -65. * b2.mV
+    v_rest_i = -60. * b2.mV
+    v_reset_e = -65. * b2.mV
+    v_reset_i = -45. * b2.mV
+    v_thresh_e = -52. * b2.mV
+    v_thresh_i = -40. * b2.mV
+    refrac_e = 5. * b2.ms
+    refrac_i = 2. * b2.ms
 
     tc_pre_ee = 20 * b2.ms
     tc_post_1_ee = 20 * b2.ms
@@ -353,7 +244,6 @@ def main(test_mode=True, runname=''):
     connections = {}
     rate_monitors = {}
     spike_monitors = {}
-    spike_counters = {}
     state_monitors = {}
 
     neuron_groups['e'] = b2.NeuronGroup(n_e * len(population_names),
@@ -414,7 +304,6 @@ def main(test_mode=True, runname=''):
         log.info(f'Creating monitors for {name}')
         rate_monitors[subpop_e] = b2.PopulationRateMonitor(nge)
         rate_monitors[subpop_i] = b2.PopulationRateMonitor(ngi)
-        spike_counters[subpop_e] = b2.SpikeMonitor(nge)
 
         if record_spikes:
             spike_monitors[subpop_e] = b2.SpikeMonitor(nge)
@@ -423,9 +312,9 @@ def main(test_mode=True, runname=''):
     #-------------------------------------------------------------------------
     # create TimedArray of rates for input examples
     #-------------------------------------------------------------------------
-    input_dt = 5 * b2.ms
-    n_dt_example = int(single_example_time / input_dt)
-    n_dt_rest = int(resting_time / input_dt)
+    input_dt = 50 * b2.ms
+    n_dt_example = int(round(single_example_time / input_dt))
+    n_dt_rest = int(round(resting_time / input_dt))
     n_dt_total = int(n_dt_example + n_dt_rest)
     input_rates = np.zeros((n_data * n_dt_total, n_input),
                            dtype=np.float16)
@@ -447,6 +336,7 @@ def main(test_mode=True, runname=''):
         input_groups[subpop_e] = b2.PoissonGroup(
             n_input,
             rates='stimulus(t%total_data_time, i)')
+        spike_monitors[subpop_e] = b2.SpikeMonitor(input_groups[subpop_e])
         rate_monitors[subpop_e] = b2.PopulationRateMonitor(input_groups[subpop_e])
 
     for name in input_connection_names:
@@ -485,117 +375,66 @@ def main(test_mode=True, runname=''):
                 #conn.run_regularly('w *= {} / (wtot_post + 0.001)'.format(weight['ee_input']),
                 #                   dt=(single_example_time + resting_time))
 
-            if record_input_weights:
-                weight_update_dt = (weight_update_interval *
+            if record_weights_interval is not None:
+                weight_update_dt = (record_weights_interval *
                                     (single_example_time + resting_time))
                 state_monitors[connName] = b2.StateMonitor(conn, 'w',
                                                            record=np.arange(n_input * n_e),
                                                            dt=weight_update_dt)
+
+
+    #!!! If run_regularly approach doesn't work
+    # could do weight normalisation using a network_operation
+    #@b2.network_operation(when='start')
+    #def function():
+    #    print('Normalizing')
+    #net.add(function)
+    # but then standalone will not work
 
     #-------------------------------------------------------------------------
     # run the simulation and set inputs
     #-------------------------------------------------------------------------
     log.info('Constructing the network')
     net = b2.Network()
-    primary_neuron_groups = {p: neuron_groups[p] for p in neuron_groups if len(p) == 1}
-    for obj_list in [neuron_groups, input_groups, connections, rate_monitors,
-                     spike_monitors, spike_counters, state_monitors]:
+    primary_neuron_groups = {p: neuron_groups[p]
+                             for p in neuron_groups if len(p) == 1}
+    for obj_list in [primary_neuron_groups, input_groups, connections,
+                     rate_monitors, spike_monitors, state_monitors]:
         for key in obj_list:
             net.add(obj_list[key])
 
     log.info('Starting simulations')
+
     net.run(runtime,
             report='text', report_period=(60 * b2.second),
-            profile=False)
+            profile=profile)
 
     b2.device.build(directory=os.path.join('build', runname),
                     compile=True, run=True, debug=False)
 
-    #print(b2.profiling_summary(net, 10))
+    if profile:
+        print(b2.profiling_summary(net, 10))
 
     #-------------------------------------------------------------------------
     # save results
     #-------------------------------------------------------------------------
+
     log.info('Saving results')
     if not test_mode:
         save_theta(population_names, neuron_groups)
-    if not test_mode:
         save_connections(connections)
-    else:
-        np.save(os.path.join(config.output_path,
-                             'resultPopVecs{}'.format(num_examples)),
-                result_monitor)
-        np.save(os.path.join(config.output_path,
-                             'inputLabels{}'.format(num_examples)),
-                data['y'])
-        if record_input_weights:
-            np.savez(os.path.join(config.output_path,
-                                  'inputWeights{}'.format(num_examples)),
-                     (state_monitors['XeAe'].t, state_monitors['XeAe'].w))
-        assignments = get_new_assignments(result_monitor, data['y'])
-        predictions = np.zeros(len(result_monitor))
-        for k, spike_rates in enumerate(result_monitor):
-            ranking = get_predicted_class_ranking(assignments, spike_rates)
-            predictions[k] = ranking[0]
-        np.save(os.path.join(config.output_path,
-                             'assignments{}'.format(num_examples)),
-                assignments)
-        np.save(os.path.join(config.output_path,
-                             'predictions{}'.format(num_examples)),
-                predictions)
 
-#    saveobj = {'rate_monitors': rate_monitors,
-#               'spike_monitors': spike_monitors}
-#    with open('saved.pickle', 'w') as f:
-#        pickle.dump(saveobj, f)
-
-    #-------------------------------------------------------------------------
-    # plot results
-    #-------------------------------------------------------------------------
-    log.info('Plotting results')
-    fig = b2.figure(figsize=(5, 10))
-    for i, name in enumerate(rate_monitors):
-        b2.subplot(len(rate_monitors), 1, 1 + i)
-        t = np.asarray(rate_monitors[name].t)
-        rate = rate_monitors[name].smooth_rate(width=0.1 * b2.second)
-        sample = max(int(len(t) / 1000), 1)
-        b2.plot(t[::sample], rate[::sample], '-')
-        b2.title('Rates of population ' + name)
-    fig.set_tight_layout(True)
-    b2.savefig(os.path.join(config.figure_path, 'rates.pdf'))
-
-    fig = b2.figure()
-    for i, name in enumerate(spike_monitors):
-        b2.subplot(len(spike_monitors), 1, 1 + i)
-        t = np.asarray(spike_monitors[name].t / b2.ms)
-        idx = spike_monitors[name].i
-        while len(t) > 1000:
-            t = t[::10]
-            idx = idx[::10]
-        b2.plot(t, idx, '.')
-        b2.title('Spikes of population ' + name)
-    fig.set_tight_layout(True)
-    b2.savefig(os.path.join(config.figure_path, 'spikes.pdf'))
-
-
-    fig = b2.figure()
-    b2.plot(spike_monitors['Ae'].count[:])
-    b2.title('Spike count of population Ae')
-    fig.set_tight_layout(True)
-    b2.savefig(os.path.join(config.figure_path, 'counts.pdf'))
-
-    input_weight_plot = create_2d_input_weights_plot(connections)
-    update_2d_input_weights_plot(input_weight_plot, connections)
-
-    fig = b2.figure(figsize=(5, 10))
-    b2.subplot(3, 1, 1)
-    b2t.brian_plot(connections['XeAe'].w)
-    b2.subplot(3, 1, 2)
-    b2t.brian_plot(connections['AeAi'].w)
-    b2.subplot(3, 1, 3)
-    b2t.brian_plot(connections['AiAe'].w)
-    fig.set_tight_layout(True)
-    b2.savefig(os.path.join(config.figure_path, 'connections.pdf'))
+    saveobj = {'rate_monitors': {km: vm.get_states()
+                                 for km, vm in rate_monitors.items()},
+               'spike_monitors': {km: vm.get_states()
+                                  for km, vm in spike_monitors.items()},
+               'state_monitors': {km: vm.get_states()
+                                  for km, vm in state_monitors.items()},
+               'labels': data['y'],
+               'total_example_time': total_example_time,
+               'dt': b2.defaultclock.dt}
+    with open(os.path.join(config.output_path, 'saved.pickle'), 'wb') as f:
+        pickle.dump(saveobj, f)
 
 
 if __name__ == '__main__':
@@ -611,6 +450,10 @@ if __name__ == '__main__':
     mode_group.add_argument('--train', dest='test_mode', action='store_false',
                             help='Enable train mode')
     parser.add_argument('--runname', default='')
+    parser.add_argument('--profile', default='')
+
     args = parser.parse_args()
 
-    sys.exit(main(test_mode=args.test_mode, runname=args.runname))
+    sys.exit(main(test_mode=args.test_mode,
+                  runname=args.runname,
+                  profile=args.profile))
