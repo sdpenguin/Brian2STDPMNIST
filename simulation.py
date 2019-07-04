@@ -1,4 +1,4 @@
-#!/bin/env python
+#!/usr/bin/env python
 '''
 Original Python2/Brian1 version created by Peter U. Diehl
 on 2014-12-15, GitHub updated 2015-08-07
@@ -21,6 +21,11 @@ import logging
 logging.captureWarnings(True)
 log = logging.getLogger('spiking-mnist')
 log.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+log.addHandler(ch)
 
 import os.path
 import numpy as np
@@ -29,31 +34,17 @@ import brian2 as b2
 from keras.datasets import mnist
 import pickle
 
-b2.set_device('cpp_standalone', build_on_run=False)
+from utilities import (get_labeled_data, get_matrix_from_file,
+                       spike_counts_from_cumulative)
+
+from IPython import embed
+
+#b2.set_device('cpp_standalone', build_on_run=False)
 
 
 class config:
     # a global object to store configuration info
     pass
-
-
-def get_labeled_data():
-    log.info('Loading MNIST data')
-    (x_train, y_train), (x_test, y_test) = mnist.load_data()
-    training = {'x': x_train, 'y': y_train}
-    testing = {'x': x_test, 'y': y_test}
-    return training, testing
-
-
-def get_matrix_from_file(filename, shape=None):
-    log.debug(f'Reading matrix from {filename}')
-    i, j, data = np.load(filename).T
-    i = i.astype(np.int)
-    j = j.astype(np.int)
-    log.debug(f'Read {len(data)} connections')
-    arr = sparse.coo_matrix((data, (i, j)), shape).todense()
-    log.debug(f'Created a matrix with shape {arr.shape}')
-    return arr
 
 
 def load_connections(connName, random=True):
@@ -66,13 +57,15 @@ def load_connections(connName, random=True):
     return get_matrix_from_file(filename)
 
 
-def save_connections(connections):
+def save_connections(connections, iteration=None):
     for connName in config.save_conns:
         log.info('Saving connections {}'.format(connName))
         conn = connections[connName]
         connListSparse = list(zip(conn.i, conn.j, conn.w))
         filename = os.path.join(config.data_path, config.weight_path,
                                 '{}'.format(connName))
+        if iteration is not None:
+            filename += '-{:06d}'.format(iteration)
         np.save(filename, connListSparse)
 
 
@@ -89,19 +82,6 @@ def save_theta(population_names, neuron_groups):
         filename = os.path.join(config.data_path, config.weight_path,
                                 'theta_{}'.format(pop_name))
         np.save(filename, neuron_groups[pop_name + 'e'].theta)
-
-
-def normalize_weights(connections, weight):
-    for connName in connections:
-        if connName[1] == 'e' and connName[3] == 'e':
-            conn = connections[connName]
-            len_source = len(conn.source)
-            len_target = len(conn.target)
-            connweights = np.reshape(conn.w, (len_source, len_target))
-            colSums = connweights.sum(axis=0)
-            colFactors = weight['ee_input'] / colSums
-            connweights *= colFactors
-            conn.w = connweights.flatten()
 
 
 def main(test_mode=True, runname='', profile=False):
@@ -127,12 +107,14 @@ def main(test_mode=True, runname='', profile=False):
         data = testing
         num_epochs = 1
         record_weights_interval = None
+        progress_interval = None
         ee_STDP_on = False
     else:
         random_weights = True
         data = training
-        num_epochs = 1  # 3
+        num_epochs = 3
         record_weights_interval = 100
+        progress_interval = 1000
         ee_STDP_on = True
 
     record_spikes = True
@@ -245,6 +227,8 @@ def main(test_mode=True, runname='', profile=False):
     rate_monitors = {}
     spike_monitors = {}
     state_monitors = {}
+    network_operations = []
+    cumulative_spike_counts = {}
 
     neuron_groups['e'] = b2.NeuronGroup(n_e * len(population_names),
                                         neuron_eqs_e,
@@ -309,6 +293,8 @@ def main(test_mode=True, runname='', profile=False):
             spike_monitors[subpop_e] = b2.SpikeMonitor(nge)
             spike_monitors[subpop_i] = b2.SpikeMonitor(ngi)
 
+        cumulative_spike_counts[subpop_e] = []
+
     #-------------------------------------------------------------------------
     # create TimedArray of rates for input examples
     #-------------------------------------------------------------------------
@@ -336,7 +322,8 @@ def main(test_mode=True, runname='', profile=False):
         input_groups[subpop_e] = b2.PoissonGroup(
             n_input,
             rates='stimulus(t%total_data_time, i)')
-        spike_monitors[subpop_e] = b2.SpikeMonitor(input_groups[subpop_e])
+        spike_monitors[subpop_e] = b2.SpikeMonitor(input_groups[subpop_e],
+                                                   record=record_spikes)
         rate_monitors[subpop_e] = b2.PopulationRateMonitor(input_groups[subpop_e])
 
     for name in input_connection_names:
@@ -348,7 +335,6 @@ def main(test_mode=True, runname='', profile=False):
             connName = preName + postName
             weightMatrix = load_connections(connName, random=random_weights)
             model = 'w : 1'
-            #model += '\n wtot_post = w : 1 (summed)'
             pre = 'g%s_post += w' % connType[0]
             post = ''
             if ee_STDP_on:
@@ -368,28 +354,51 @@ def main(test_mode=True, runname='', profile=False):
             deltaDelay = maxDelay - minDelay
             conn.delay = 'minDelay + rand() * deltaDelay'
             conn.w = weightMatrix.flatten()
-            if ee_STDP_on:
-                pass
-                # normalize weights
-                # small amount is added to avoid division by zero
-                #conn.run_regularly('w *= {} / (wtot_post + 0.001)'.format(weight['ee_input']),
-                #                   dt=(single_example_time + resting_time))
 
             if record_weights_interval is not None:
                 weight_update_dt = (record_weights_interval *
-                                    (single_example_time + resting_time))
+                                    total_example_time)
                 state_monitors[connName] = b2.StateMonitor(conn, 'w',
                                                            record=np.arange(n_input * n_e),
                                                            dt=weight_update_dt)
 
+    @b2.network_operation(dt=total_example_time)
+    def normalize_weights(t):
+        for connName in connections:
+            if connName[1] == 'e' and connName[3] == 'e':
+                #log.info('Normalizing weights for {} '
+                #         'at time {}'.format(connName, t))
+                conn = connections[connName]
+                connweights = np.reshape(conn.w, (len(conn.source),
+                                                  len(conn.target)))
+                colSums = connweights.sum(axis=0)
+                colFactors = weight['ee_input'] / colSums
+                connweights *= colFactors
+                conn.w = connweights.flatten()
 
-    #!!! If run_regularly approach doesn't work
-    # could do weight normalisation using a network_operation
-    #@b2.network_operation(when='start')
-    #def function():
-    #    print('Normalizing')
-    #net.add(function)
-    # but then standalone will not work
+    if ee_STDP_on:
+        network_operations.append(normalize_weights)
+
+    @b2.network_operation(dt=total_example_time)
+    def record_cumulative_spike_counts(t):
+        for name in population_names:
+            subpop_e = name + 'e'
+            count = spike_monitors[subpop_e].count[:]
+            cumulative_spike_counts[subpop_e].append(count)
+    network_operations.append(record_cumulative_spike_counts)
+
+    if progress_interval is not None:
+        @b2.network_operation(dt=total_example_time * progress_interval)
+        def progress(t):
+            save_connections(connections, int(t / total_example_time))
+            spikecounts = {}
+            for name in population_names:
+                subpop_e = name + 'e'
+                csc = cumulative_spike_counts[subpop_e]
+                spikecounts[subpop_e] = spike_counts_from_cumulative(csc)
+                embed()
+
+        network_operations.append(progress)
 
     #-------------------------------------------------------------------------
     # run the simulation and set inputs
@@ -402,6 +411,9 @@ def main(test_mode=True, runname='', profile=False):
                      rate_monitors, spike_monitors, state_monitors]:
         for key in obj_list:
             net.add(obj_list[key])
+
+    for obj in network_operations:
+        net.add(obj)
 
     log.info('Starting simulations')
 
