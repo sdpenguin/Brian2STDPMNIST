@@ -31,11 +31,10 @@ import os.path
 import numpy as np
 from scipy import sparse
 import brian2 as b2
-from keras.datasets import mnist
 import pickle
+import time
 
-from utilities import (get_labeled_data, get_matrix_from_file,
-                       spike_counts_from_cumulative)
+from utilities import *
 
 from IPython import embed
 
@@ -61,12 +60,11 @@ def save_connections(connections, iteration=None):
     for connName in config.save_conns:
         log.info('Saving connections {}'.format(connName))
         conn = connections[connName]
-        connListSparse = list(zip(conn.i, conn.j, conn.w))
         filename = os.path.join(config.data_path, config.weight_path,
                                 '{}'.format(connName))
         if iteration is not None:
             filename += '-{:06d}'.format(iteration)
-        np.save(filename, connListSparse)
+        connections_to_file(conn, filename)
 
 
 def load_theta(population_name):
@@ -84,8 +82,8 @@ def save_theta(population_names, neuron_groups):
         np.save(filename, neuron_groups[pop_name + 'e'].theta)
 
 
-def main(test_mode=True, runname='', profile=False):
-    runname = runname
+def main(test_mode=True, runname='', profile=False,
+         progress_interval=None, record_weights_interval=None):
 
     # load MNIST
     training, testing = get_labeled_data()
@@ -96,25 +94,29 @@ def main(test_mode=True, runname='', profile=False):
     np.random.seed(0)
     config.data_path = './'
     config.random_weight_path = 'random/'
-    config.weight_path = os.path.join(runname, 'weights/')
+    config.weight_path = os.path.join('runs', runname, 'weights/')
     os.makedirs(config.weight_path, exist_ok=True)
     log.info('Running {}'.format(runname))
-    config.output_path = os.path.join(runname, 'output/')
+    config.output_path = os.path.join('runs', runname, 'output/')
     os.makedirs(config.output_path, exist_ok=True)
 
     if test_mode:
         random_weights = False
         data = testing
         num_epochs = 1
-        record_weights_interval = None
-        progress_interval = None
+        if record_weights_interval is None:
+            record_weights_interval = 0
+        if progress_interval is None:
+            progress_interval = 0
         ee_STDP_on = False
     else:
         random_weights = True
         data = training
-        num_epochs = 3
-        record_weights_interval = 100
-        progress_interval = 1000
+        num_epochs = 1
+        if record_weights_interval is None:
+            record_weights_interval = 1000
+        if progress_interval is None:
+            progress_interval = 100
         ee_STDP_on = True
 
     record_spikes = True
@@ -258,22 +260,27 @@ def main(test_mode=True, runname='', profile=False):
         nge.v = v_rest_e - 40. * b2.mV
         ngi.v = v_rest_i - 40. * b2.mV
 
-        if config.weight_path[-8:] == 'weights/':
+        if not random_weights:
             neuron_groups['e'].theta = load_theta(name)
         else:
             neuron_groups['e'].theta = np.ones(n_e) * 20.0 * b2.mV
 
-        log.info(f'Creating recurrent connections')
         for connType in recurrent_conntype_names:
+            log.info(f'Creating recurrent connections for {connType}')
             preName = name + connType[0]
             postName = name + connType[1]
             connName = preName + postName
+            # "random" connections for AeAi is matrix with zero everywhere
+            # except the diagonal, which contains 10.4
+            # "random" connections for AiAe is matrix with 17.0 everywhere
+            # except the diagonal, which contains zero
             weightMatrix = load_connections(connName, random=True)
             model = 'w : 1'
             pre = 'g%s_post += w' % connType[0]
             post = ''
             if ee_STDP_on:
                 if 'ee' in recurrent_conntype_names:
+                    log.info(f'Creating STDP for connection {name[0]}e{name[1]}e')
                     model += eqs_stdp_ee
                     pre += '; ' + eqs_stdp_pre_ee
                     post = eqs_stdp_post_ee
@@ -329,7 +336,7 @@ def main(test_mode=True, runname='', profile=False):
     for name in input_connection_names:
         log.info(f'Creating connections between {name[0]} and {name[1]}')
         for connType in input_conntype_names:
-            log.debug(f'connType {connType} of {input_conntype_names}')
+            log.debug(f'connType {connType}')
             preName = name[0] + connType[0]
             postName = name[1] + connType[1]
             connName = preName + postName
@@ -355,19 +362,12 @@ def main(test_mode=True, runname='', profile=False):
             conn.delay = 'minDelay + rand() * deltaDelay'
             conn.w = weightMatrix.flatten()
 
-            if record_weights_interval is not None:
-                weight_update_dt = (record_weights_interval *
-                                    total_example_time)
-                state_monitors[connName] = b2.StateMonitor(conn, 'w',
-                                                           record=np.arange(n_input * n_e),
-                                                           dt=weight_update_dt)
-
     @b2.network_operation(dt=total_example_time)
     def normalize_weights(t):
         for connName in connections:
             if connName[1] == 'e' and connName[3] == 'e':
-                #log.info('Normalizing weights for {} '
-                #         'at time {}'.format(connName, t))
+                #log.debug('Normalizing weights for {} '
+                #          'at time {}'.format(connName, t))
                 conn = connections[connName]
                 connweights = np.reshape(conn.w, (len(conn.source),
                                                   len(conn.target)))
@@ -387,16 +387,56 @@ def main(test_mode=True, runname='', profile=False):
             cumulative_spike_counts[subpop_e].append(count)
     network_operations.append(record_cumulative_spike_counts)
 
-    if progress_interval is not None:
+    if record_weights_interval > 0:
+        @b2.network_operation(dt=total_example_time * record_weights_interval)
+        def record_weights(t):
+            if t > 0:
+                log.debug('Starting record_weights')
+                start = time.process_time()
+                save_connections(connections, int(t / total_example_time))
+                log.debug('record_weights took {:.3f} seconds'.format(time.process_time() - start))
+
+        network_operations.append(record_weights)
+
+    if progress_interval > 0:
+        progress_accuracy = {name + 'e': {} for name in population_names}
         @b2.network_operation(dt=total_example_time * progress_interval)
         def progress(t):
-            save_connections(connections, int(t / total_example_time))
-            spikecounts = {}
-            for name in population_names:
-                subpop_e = name + 'e'
-                csc = cumulative_spike_counts[subpop_e]
-                spikecounts[subpop_e] = spike_counts_from_cumulative(csc)
-                embed()
+            if t > (total_example_time * progress_interval * 1.5):
+                log.debug('Starting progress')
+                start = time.process_time()
+                labels = get_labels(data)
+                for name in population_names:
+                    subpop_e = name + 'e'
+                    csc = cumulative_spike_counts[subpop_e]
+                    nseen = len(csc) - 1
+                    log.debug('So far seen {} examples'.format(nseen))
+                    spikecounts_past = spike_counts_from_cumulative(
+                                           csc,
+                                           end=-progress_interval,
+                                           atmost=100 * progress_interval)
+                    log.debug('Assignments based on {} spikes'.format(len(spikecounts_past)))
+                    assignments = get_assignments(spikecounts_past,
+                                                  labels)
+                    spikecounts_present = spike_counts_from_cumulative(csc,
+                                              start=-progress_interval)
+                    log.debug('Accuracy based on {} spikes'.format(len(spikecounts_present)))
+                    predictions = get_predictions(spikecounts_present,
+                                                  assignments, labels)
+                    accuracy = get_accuracy(predictions)
+                    accuracy *= 100
+                    progress_accuracy[subpop_e][nseen] = accuracy
+                    print('Accuracy [{}]: {:.1f}%  ({:.1f}–{:.1f}% 1σ conf. int.)'
+                              .format(subpop_e, *accuracy))
+                    fn = os.path.join(config.output_path, 'accuracy-{}.pdf'.format(subpop_e))
+                    plot_accuracy(progress_accuracy[subpop_e],
+                                  filename=fn)
+
+                fn = os.path.join(config.output_path, 'weights.pdf')
+                plot_weights(connections['XeAe'], assignments,
+                             filename=fn, max_weight=None)
+
+                log.debug('progress took {:.3f} seconds'.format(time.process_time() - start))
 
         network_operations.append(progress)
 
@@ -463,9 +503,13 @@ if __name__ == '__main__':
                             help='Enable train mode')
     parser.add_argument('--runname', default='')
     parser.add_argument('--profile', default='')
+    parser.add_argument('--progress_interval', default=None)
+    parser.add_argument('--record_weights_interval', default=None)
 
     args = parser.parse_args()
 
     sys.exit(main(test_mode=args.test_mode,
                   runname=args.runname,
-                  profile=args.profile))
+                  profile=args.profile,
+                  progress_interval=args.progress_interval,
+                  record_weights_interval=args.record_weights_interval))
