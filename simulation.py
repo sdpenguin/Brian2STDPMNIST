@@ -82,8 +82,10 @@ def save_theta(population_names, neuron_groups):
         np.save(filename, neuron_groups[pop_name + 'e'].theta)
 
 
-def main(test_mode=True, runname='', profile=False,
-         progress_interval=None, record_weights_interval=None):
+def main(test_mode=True, runname='',
+         num_epochs=None, record_spikes=False,
+         progress_interval=None, save_interval=None,
+         profile=False):
 
     # load MNIST
     training, testing = get_labeled_data()
@@ -101,25 +103,25 @@ def main(test_mode=True, runname='', profile=False,
     os.makedirs(config.output_path, exist_ok=True)
 
     if test_mode:
-        random_weights = False
         data = testing
-        num_epochs = 1
-        if record_weights_interval is None:
-            record_weights_interval = 0
+        random_weights = False
+        ee_STDP_on = False
+        if num_epochs is None:
+            num_epochs = 1
+        if save_interval is None:
+            save_interval = 0
         if progress_interval is None:
             progress_interval = 0
-        ee_STDP_on = False
     else:
-        random_weights = True
         data = training
-        num_epochs = 1
-        if record_weights_interval is None:
-            record_weights_interval = 1000
+        random_weights = True
+        ee_STDP_on = True
+        if num_epochs is None:
+            num_epochs = 1
+        if save_interval is None:
+            save_interval = 1000
         if progress_interval is None:
             progress_interval = 100
-        ee_STDP_on = True
-
-    record_spikes = True
 
     num_examples = int(len(data['y']) * num_epochs)
     n_input = data['x'][0].size
@@ -132,9 +134,9 @@ def main(test_mode=True, runname='', profile=False,
     #-------------------------------------------------------------------------
     # set parameters and equations
     #-------------------------------------------------------------------------
-    log.info('Original defaultclock.dt = {}'.format(str(b2.defaultclock.dt)))
+    #log.info('Original defaultclock.dt = {}'.format(str(b2.defaultclock.dt)))
     b2.defaultclock.dt = 0.5 * b2.ms
-    log.info('New defaultclock.dt = {}'.format(str(b2.defaultclock.dt)))
+    log.info('defaultclock.dt = {}'.format(str(b2.defaultclock.dt)))
 
     n_e = 400
     n_i = n_e
@@ -151,8 +153,8 @@ def main(test_mode=True, runname='', profile=False,
     input_conntype_names = ['ee_input']
     recurrent_conntype_names = ['ei', 'ie']
 
-    weight = {}
-    weight['ee_input'] = 78.
+    total_weight = {}
+    total_weight['ee_input'] = 78.
 
     delay = {}
     delay['ee_input'] = (0 * b2.ms, 10 * b2.ms)
@@ -179,8 +181,6 @@ def main(test_mode=True, runname='', profile=False,
     wmax_ee = 1.0
     exp_ee_pre = 0.2
     exp_ee_post = exp_ee_pre
-
-    STDP_offset = 0.4
 
     scr_e = 'v = v_reset_e; timer = 0*ms'
     if not test_mode:
@@ -226,7 +226,6 @@ def main(test_mode=True, runname='', profile=False,
     neuron_groups = {}
     input_groups = {}
     connections = {}
-    rate_monitors = {}
     spike_monitors = {}
     state_monitors = {}
     network_operations = []
@@ -292,13 +291,9 @@ def main(test_mode=True, runname='', profile=False,
             conn.connect()  # all-to-all connection
             conn.w = weightMatrix.flatten()
 
-        log.info(f'Creating monitors for {name}')
-        rate_monitors[subpop_e] = b2.PopulationRateMonitor(nge)
-        rate_monitors[subpop_i] = b2.PopulationRateMonitor(ngi)
-
-        if record_spikes:
-            spike_monitors[subpop_e] = b2.SpikeMonitor(nge)
-            spike_monitors[subpop_i] = b2.SpikeMonitor(ngi)
+        log.debug(f'Creating spike monitors for {name}')
+        spike_monitors[subpop_e] = b2.SpikeMonitor(nge, record=record_spikes)
+        spike_monitors[subpop_i] = b2.SpikeMonitor(ngi, record=record_spikes)
 
         cumulative_spike_counts[subpop_e] = []
 
@@ -329,9 +324,9 @@ def main(test_mode=True, runname='', profile=False,
         input_groups[subpop_e] = b2.PoissonGroup(
             n_input,
             rates='stimulus(t%total_data_time, i)')
+        log.debug(f'Creating spike monitors for {name}')
         spike_monitors[subpop_e] = b2.SpikeMonitor(input_groups[subpop_e],
                                                    record=record_spikes)
-        rate_monitors[subpop_e] = b2.PopulationRateMonitor(input_groups[subpop_e])
 
     for name in input_connection_names:
         log.info(f'Creating connections between {name[0]} and {name[1]}')
@@ -372,7 +367,7 @@ def main(test_mode=True, runname='', profile=False,
                 connweights = np.reshape(conn.w, (len(conn.source),
                                                   len(conn.target)))
                 colSums = connweights.sum(axis=0)
-                colFactors = weight['ee_input'] / colSums
+                colFactors = total_weight['ee_input'] / colSums
                 connweights *= colFactors
                 conn.w = connweights.flatten()
 
@@ -387,16 +382,16 @@ def main(test_mode=True, runname='', profile=False,
             cumulative_spike_counts[subpop_e].append(count)
     network_operations.append(record_cumulative_spike_counts)
 
-    if record_weights_interval > 0:
-        @b2.network_operation(dt=total_example_time * record_weights_interval)
-        def record_weights(t):
+    if save_interval > 0:
+        @b2.network_operation(dt=total_example_time * save_interval)
+        def save_status(t):
             if t > 0:
-                log.debug('Starting record_weights')
+                log.debug('Starting save_status')
                 start = time.process_time()
                 save_connections(connections, int(t / total_example_time))
-                log.debug('record_weights took {:.3f} seconds'.format(time.process_time() - start))
+                log.debug('save_status took {:.3f} seconds'.format(time.process_time() - start))
 
-        network_operations.append(record_weights)
+        network_operations.append(save_status)
 
     if progress_interval > 0:
         progress_accuracy = {name + 'e': {} for name in population_names}
@@ -448,7 +443,7 @@ def main(test_mode=True, runname='', profile=False,
     primary_neuron_groups = {p: neuron_groups[p]
                              for p in neuron_groups if len(p) == 1}
     for obj_list in [primary_neuron_groups, input_groups, connections,
-                     rate_monitors, spike_monitors, state_monitors]:
+                     spike_monitors, state_monitors]:
         for key in obj_list:
             net.add(obj_list[key])
 
@@ -476,9 +471,7 @@ def main(test_mode=True, runname='', profile=False,
         save_theta(population_names, neuron_groups)
         save_connections(connections)
 
-    saveobj = {'rate_monitors': {km: vm.get_states()
-                                 for km, vm in rate_monitors.items()},
-               'spike_monitors': {km: vm.get_states()
+    saveobj = {'spike_monitors': {km: vm.get_states()
                                   for km, vm in spike_monitors.items()},
                'state_monitors': {km: vm.get_states()
                                   for km, vm in state_monitors.items()},
@@ -503,13 +496,17 @@ if __name__ == '__main__':
                             help='Enable train mode')
     parser.add_argument('--runname', default='')
     parser.add_argument('--profile', default='')
+    parser.add_argument('--num_epochs', default=None)
     parser.add_argument('--progress_interval', default=None)
-    parser.add_argument('--record_weights_interval', default=None)
+    parser.add_argument('--save_interval', default=None)
+    parser.add_argument('--record_spikes', action='store_true')
 
     args = parser.parse_args()
 
     sys.exit(main(test_mode=args.test_mode,
                   runname=args.runname,
-                  profile=args.profile,
+                  num_epochs=args.num_epochs,
+                  record_spikes=args.record_spikes,
                   progress_interval=args.progress_interval,
-                  record_weights_interval=args.record_weights_interval))
+                  save_interval=args.save_interval,
+                  profile=args.profile))
