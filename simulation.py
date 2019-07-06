@@ -30,12 +30,13 @@ log.addHandler(ch)
 
 import os.path
 import numpy as np
-from scipy import sparse
 import brian2 as b2
 import pickle
 import time
 
 from utilities import *
+
+from neurons import DiehlAndCookExcitatoryNeuronGroup, DiehlAndCookInhibitoryNeuronGroup
 
 from IPython import embed
 
@@ -76,12 +77,14 @@ def load_theta(population_name):
     return np.load(filename) * b2.volt
 
 
-def save_theta(population_names, neuron_groups):
+def save_theta(population_names, neuron_groups, iteration=None):
     log.info("Saving theta")
     for pop_name in population_names:
         filename = os.path.join(
             config.data_path, config.weight_path, "theta_{}".format(pop_name)
         )
+        if iteration is not None:
+            filename += "-{:06d}".format(iteration)
         np.save(filename, neuron_groups[pop_name + "e"].theta)
 
 
@@ -168,60 +171,17 @@ def main(
     delay["ee_input"] = (0 * b2.ms, 10 * b2.ms)
     delay["ei_input"] = (0 * b2.ms, 5 * b2.ms)
 
-    input_intensity = 2.0
+    namespace = {
+        "tc_pre_ee": 20 * b2.ms,
+        "tc_post_1_ee": 20 * b2.ms,
+        "tc_post_2_ee": 40 * b2.ms,
+        "nu_ee_pre": 0.0001,
+        "nu_ee_post": 0.01,
+        "wmax_ee": 1.0,
+        "exp_ee_pre": 0.2,
+        "exp_ee_post": 0.2,
+    }
 
-    v_rest_e = -65.0 * b2.mV
-    v_rest_i = -60.0 * b2.mV
-    v_reset_e = -65.0 * b2.mV
-    v_reset_i = -45.0 * b2.mV
-    v_thresh_e = -52.0 * b2.mV
-    v_thresh_i = -40.0 * b2.mV
-    refrac_e = 5.0 * b2.ms
-    refrac_i = 2.0 * b2.ms
-
-    tc_pre_ee = 20 * b2.ms
-    tc_post_1_ee = 20 * b2.ms
-    tc_post_2_ee = 40 * b2.ms
-
-    nu_ee_pre = 0.0001  # learning rate
-    nu_ee_post = 0.01  # learning rate
-
-    wmax_ee = 1.0
-    exp_ee_pre = 0.2
-    exp_ee_post = exp_ee_pre
-
-    scr_e = "v = v_reset_e; timer = 0*ms"
-    if not test_mode:
-        tc_theta = 1e7 * b2.ms
-        theta_plus_e = 0.05 * b2.mV
-        scr_e += "; theta += theta_plus_e"
-
-    offset = 20.0 * b2.mV
-    v_thresh_e_str = "(v>(theta - offset + v_thresh_e)) and (timer>refrac_e)"
-    v_thresh_i_str = "v>v_thresh_i"
-    v_reset_i_str = "v=v_reset_i"
-
-    neuron_eqs_e = """
-            dv/dt = ((v_rest_e - v) + (I_synE+I_synI) / nS) / (100*ms)  : volt (unless refractory)
-            I_synE = ge * nS * -v  : amp
-            I_synI = gi * nS * (-100.*mV-v)  : amp
-            dge/dt = -ge/(1.0*ms)  : 1
-            dgi/dt = -gi/(2.0*ms)  : 1
-            dtimer/dt = 0.1  : second
-            wtot  : 1
-            """
-    if test_mode:
-        neuron_eqs_e += "\n  theta  :volt"
-    else:
-        neuron_eqs_e += "\n  dtheta/dt = -theta / (tc_theta)  : volt"
-
-    neuron_eqs_i = """
-            dv/dt = ((v_rest_i - v) + (I_synE+I_synI) / nS) / (10*ms)  : volt (unless refractory)
-            I_synE = ge * nS * -v  : amp
-            I_synI = gi * nS * (-85.*mV-v)  : amp
-            dge/dt = -ge/(1.0*ms)  : 1
-            dgi/dt = -gi/(2.0*ms)  : 1
-            """
     eqs_stdp_ee = """
             post2before  : 1
             dpre/dt = -pre/(tc_pre_ee)  : 1 (event-driven)
@@ -231,6 +191,10 @@ def main(
     eqs_stdp_pre_ee = "pre = 1.; w = clip(w + nu_ee_pre * post1, 0, wmax_ee)"
     eqs_stdp_post_ee = "post2before = post2; w = clip(w + nu_ee_post * pre * post2before, 0, wmax_ee); post1 = 1.; post2 = 1."
 
+    input_intensity = 2.0
+
+    n_pop = len(population_names)
+
     neuron_groups = {}
     input_groups = {}
     connections = {}
@@ -239,22 +203,9 @@ def main(
     network_operations = []
     cumulative_spike_counts = {}
 
-    neuron_groups["e"] = b2.NeuronGroup(
-        n_e * len(population_names),
-        neuron_eqs_e,
-        threshold=v_thresh_e_str,
-        refractory=refrac_e,
-        reset=scr_e,
-        method="euler",
-    )
-    neuron_groups["i"] = b2.NeuronGroup(
-        n_i * len(population_names),
-        neuron_eqs_i,
-        threshold=v_thresh_i_str,
-        refractory=refrac_i,
-        reset=v_reset_i_str,
-        method="euler",
-    )
+    neuron_groups["e"] = DiehlAndCookExcitatoryNeuronGroup(n_e * n_pop,
+                                                           test_mode=test_mode)
+    neuron_groups["i"] = DiehlAndCookInhibitoryNeuronGroup(n_i * n_pop)
 
     # -------------------------------------------------------------------------
     # create network population and recurrent connections
@@ -270,13 +221,8 @@ def main(
             subgroup_n * n_i : (subgroup_n + 1) * n_i
         ]
 
-        nge.v = v_rest_e - 40.0 * b2.mV
-        ngi.v = v_rest_i - 40.0 * b2.mV
-
         if not random_weights:
             neuron_groups["e"].theta = load_theta(name)
-        else:
-            neuron_groups["e"].theta = np.ones(n_e) * 20.0 * b2.mV
 
         for connType in recurrent_conntype_names:
             log.info(f"Creating recurrent connections for {connType}")
@@ -303,6 +249,7 @@ def main(
                 model=model,
                 on_pre=pre,
                 on_post=post,
+                namespace=namespace
             )
             conn.connect()  # all-to-all connection
             conn.w = weightMatrix.flatten()
@@ -367,6 +314,7 @@ def main(
                 model=model,
                 on_pre=pre,
                 on_post=post,
+                namespace=namespace
             )
             conn.connect()  # all-to-all connection
             minDelay = delay[connType][0]
@@ -375,20 +323,23 @@ def main(
             conn.delay = "minDelay + rand() * deltaDelay"
             conn.w = weightMatrix.flatten()
 
-    @b2.network_operation(dt=total_example_time)
-    def normalize_weights(t):
-        for connName in connections:
-            if connName[1] == "e" and connName[3] == "e":
-                # log.debug('Normalizing weights for {} '
-                #          'at time {}'.format(connName, t))
-                conn = connections[connName]
-                connweights = np.reshape(conn.w, (len(conn.source), len(conn.target)))
-                colSums = connweights.sum(axis=0)
-                colFactors = total_weight["ee_input"] / colSums
-                connweights *= colFactors
-                conn.w = connweights.flatten()
-
     if ee_STDP_on:
+
+        @b2.network_operation(dt=total_example_time)
+        def normalize_weights(t):
+            for connName in connections:
+                if connName[1] == "e" and connName[3] == "e":
+                    # log.debug('Normalizing weights for {} '
+                    #          'at time {}'.format(connName, t))
+                    conn = connections[connName]
+                    connweights = np.reshape(
+                        conn.w, (len(conn.source), len(conn.target))
+                    )
+                    colSums = connweights.sum(axis=0)
+                    colFactors = total_weight["ee_input"] / colSums
+                    connweights *= colFactors
+                    conn.w = connweights.flatten()
+
         network_operations.append(normalize_weights)
 
     @b2.network_operation(dt=total_example_time)
@@ -407,7 +358,9 @@ def main(
             if t > 0:
                 log.debug("Starting save_status")
                 start = time.process_time()
-                save_connections(connections, int(t / total_example_time))
+                tbin = int(t / total_example_time)
+                save_theta(population_names, neuron_groups, tbin)
+                save_connections(connections, tbin)
                 log.debug(
                     "save_status took {:.3f} seconds".format(
                         time.process_time() - start
