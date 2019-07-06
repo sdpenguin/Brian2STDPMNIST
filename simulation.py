@@ -37,6 +37,7 @@ import time
 from utilities import *
 
 from neurons import DiehlAndCookExcitatoryNeuronGroup, DiehlAndCookInhibitoryNeuronGroup
+from synapses import DiehlAndCookSynapses
 
 from IPython import embed
 
@@ -171,26 +172,6 @@ def main(
     delay["ee_input"] = (0 * b2.ms, 10 * b2.ms)
     delay["ei_input"] = (0 * b2.ms, 5 * b2.ms)
 
-    namespace = {
-        "tc_pre_ee": 20 * b2.ms,
-        "tc_post_1_ee": 20 * b2.ms,
-        "tc_post_2_ee": 40 * b2.ms,
-        "nu_ee_pre": 0.0001,
-        "nu_ee_post": 0.01,
-        "wmax_ee": 1.0,
-        "exp_ee_pre": 0.2,
-        "exp_ee_post": 0.2,
-    }
-
-    eqs_stdp_ee = """
-            post2before  : 1
-            dpre/dt = -pre/(tc_pre_ee)  : 1 (event-driven)
-            dpost1/dt  = -post1/(tc_post_1_ee)  : 1 (event-driven)
-            dpost2/dt  = -post2/(tc_post_2_ee)  : 1 (event-driven)
-            """
-    eqs_stdp_pre_ee = "pre = 1.; w = clip(w + nu_ee_pre * post1, 0, wmax_ee)"
-    eqs_stdp_post_ee = "post2before = post2; w = clip(w + nu_ee_post * pre * post2before, 0, wmax_ee); post1 = 1.; post2 = 1."
-
     input_intensity = 2.0
 
     n_pop = len(population_names)
@@ -203,8 +184,9 @@ def main(
     network_operations = []
     cumulative_spike_counts = {}
 
-    neuron_groups["e"] = DiehlAndCookExcitatoryNeuronGroup(n_e * n_pop,
-                                                           test_mode=test_mode)
+    neuron_groups["e"] = DiehlAndCookExcitatoryNeuronGroup(
+        n_e * n_pop, test_mode=test_mode
+    )
     neuron_groups["i"] = DiehlAndCookInhibitoryNeuronGroup(n_i * n_pop)
 
     # -------------------------------------------------------------------------
@@ -229,29 +211,15 @@ def main(
             preName = name + connType[0]
             postName = name + connType[1]
             connName = preName + postName
+            conn = connections[connName] = DiehlAndCookSynapses(
+                neuron_groups[preName], neuron_groups[postName], conn_type=connType
+            )
+            conn.connect()  # all-to-all connection
             # "random" connections for AeAi is matrix with zero everywhere
             # except the diagonal, which contains 10.4
             # "random" connections for AiAe is matrix with 17.0 everywhere
             # except the diagonal, which contains zero
             weightMatrix = load_connections(connName, random=True)
-            model = "w : 1"
-            pre = "g%s_post += w" % connType[0]
-            post = ""
-            if ee_STDP_on:
-                if "ee" in recurrent_conntype_names:
-                    log.info(f"Creating STDP for connection {name[0]}e{name[1]}e")
-                    model += eqs_stdp_ee
-                    pre += "; " + eqs_stdp_pre_ee
-                    post = eqs_stdp_post_ee
-            conn = connections[connName] = b2.Synapses(
-                neuron_groups[preName],
-                neuron_groups[postName],
-                model=model,
-                on_pre=pre,
-                on_post=post,
-                namespace=namespace
-            )
-            conn.connect()  # all-to-all connection
             conn.w = weightMatrix.flatten()
 
         log.debug(f"Creating spike monitors for {name}")
@@ -298,29 +266,18 @@ def main(
             preName = name[0] + connType[0]
             postName = name[1] + connType[1]
             connName = preName + postName
-            weightMatrix = load_connections(connName, random=random_weights)
-            model = "w : 1"
-            pre = "g%s_post += w" % connType[0]
-            post = ""
-            if ee_STDP_on:
-                log.info(f"Creating STDP for connection {name[0]}e{name[1]}e")
-                model += eqs_stdp_ee
-                pre += "; " + eqs_stdp_pre_ee
-                post = eqs_stdp_post_ee
-
-            conn = connections[connName] = b2.Synapses(
+            conn = connections[connName] = DiehlAndCookSynapses(
                 input_groups[preName],
                 neuron_groups[postName],
-                model=model,
-                on_pre=pre,
-                on_post=post,
-                namespace=namespace
+                conn_type=connType,
+                stdp_on=ee_STDP_on,
             )
             conn.connect()  # all-to-all connection
             minDelay = delay[connType][0]
             maxDelay = delay[connType][1]
             deltaDelay = maxDelay - minDelay
             conn.delay = "minDelay + rand() * deltaDelay"
+            weightMatrix = load_connections(connName, random=random_weights)
             conn.w = weightMatrix.flatten()
 
     if ee_STDP_on:

@@ -4,6 +4,7 @@ import brian2 as b2
 class DiehlAndCookBaseNeuronGroup(b2.NeuronGroup):
     def __init__(self):
         self.create_namespace()
+        self.create_base_equations()
         self.create_equations()
         self.method = "euler"
         super().__init__(
@@ -16,6 +17,15 @@ class DiehlAndCookBaseNeuronGroup(b2.NeuronGroup):
             namespace=self.namespace,
         )
         self.initialize()
+
+    def create_base_equations(self):
+        self.model = b2.Equations(
+            """
+            I_synE = ge * nS * -v  : amp
+            dge/dt = -ge / (1.0*ms)  : 1
+            dgi/dt = -gi / (2.0*ms)  : 1
+            """
+        )
 
 
 class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
@@ -36,15 +46,11 @@ class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
         }
 
     def create_equations(self):
-        self.model = b2.Equations(
+        self.model += b2.Equations(
             """
             dv/dt = ((v_rest_e - v) + (I_synE + I_synI) / nS) / (100*ms)  : volt (unless refractory)
-            I_synE = ge * nS * -v  : amp
             I_synI = gi * nS * (-100*mV - v)  : amp
-            dge/dt = -ge / (1.0*ms)  : 1
-            dgi/dt = -gi / (2.0*ms)  : 1
             dtimer/dt = 0.1  : second
-            wtot  : 1
             """
         )
         if self.test_mode:
@@ -52,7 +58,9 @@ class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
         else:
             self.model += b2.Equations("dtheta/dt = -theta / tc_theta  : volt")
 
-        self.threshold = "(v > (theta - theta_init + v_thresh_e)) and (timer > refrac_e)"
+        self.threshold = (
+            "(v > (theta - theta_init + v_thresh_e)) and (timer > refrac_e)"
+        )
 
         self.refractory = "refrac_e"
 
@@ -68,7 +76,6 @@ class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
 class DiehlAndCookInhibitoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
     def __init__(self, N):
         self.N = N
-        self.create_equations()
         super().__init__()
 
     def create_namespace(self):
@@ -80,13 +87,10 @@ class DiehlAndCookInhibitoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
         }
 
     def create_equations(self):
-        self.model = b2.Equations(
+        self.model += b2.Equations(
             """
-            dv/dt = ((v_rest_i - v) + (I_synE+I_synI) / nS) / (10*ms)  : volt (unless refractory)
-            I_synE = ge * nS * -v  : amp
+            dv/dt = ((v_rest_i - v) + (I_synE + I_synI) / nS) / (10*ms)  : volt (unless refractory)
             I_synI = gi * nS * (-85.*mV-v)  : amp
-            dge/dt = -ge/(1.0*ms)  : 1
-            dgi/dt = -gi/(2.0*ms)  : 1
             """
         )
 

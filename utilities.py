@@ -7,7 +7,6 @@ import os.path
 import numpy as np
 from scipy import sparse
 from scipy.special import betaincinv
-from scipy.stats import describe
 import brian2 as b2
 from urllib.request import urlretrieve
 
@@ -43,7 +42,7 @@ def get_matrix_from_file(filename, shape=None):
     log.debug(f"Read {len(data)} connections")
     arr = sparse.coo_matrix((data, (i, j)), shape).todense()
     log.debug(f"Created a matrix with shape {arr.shape}")
-    log.debug("Statistics:\n" + pd.Series(arr.flat).describe().to_string())
+    # log.debug("Statistics:\n" + pd.Series(arr.flat).describe().to_string())
     return arr
 
 
@@ -71,7 +70,7 @@ def rearrange_weights(weights):
 
 
 def plot_weights(weights, assignments=None, max_weight=1.0, ax=None, filename=None):
-    if type(weights) is b2.Synapses:
+    if isinstance(weights, b2.Synapses):
         weights = sparse.coo_matrix((weights.w, (weights.i, weights.j))).todense()
     rearranged_weights = rearrange_weights(weights)
     closefig = False
