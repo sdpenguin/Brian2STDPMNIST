@@ -133,8 +133,7 @@ def plot_accuracy(acchist, ax=None, filename=None):
 
 
 def spike_counts_from_cumulative(
-    cumulative_spike_counts, n_data,
-    start=0, end=None, atmost=None
+    cumulative_spike_counts, n_data, start=0, end=None, atmost=None
 ):
     log.debug("Producing spike counts from cumulative counts")
     counts = np.diff(cumulative_spike_counts, axis=0)
@@ -157,14 +156,15 @@ def spike_counts_from_cumulative(
     spikecounts = spikecounts[spikecounts["tbin"] >= start]
     log.debug("Ending before tbin {}".format(end))
     spikecounts = spikecounts[spikecounts["tbin"] < end]
-    spikecounts['example_idx'] = spikecounts['tbin'] % n_data
+    spikecounts["example_idx"] = spikecounts["tbin"] % n_data
     spikecounts = spikecounts.set_index(["tbin", "i"])
     return spikecounts
 
 
 def get_assignments(counts, labels):
-    counts = labels.join(counts)
-    counts = counts.reset_index("tbin", drop=True)
+    counts = counts.reset_index('i').set_index('example_idx')
+    counts = labels.join(counts, how="right")
+    counts = counts.reset_index("example_idx", drop=True)
     counts = counts.groupby(["i", "label"]).sum().reset_index("label")
     counts = counts.sort_values(["i", "count"], ascending=[True, False])
     assignments = counts.groupby("i").head(1).drop(columns="count")
@@ -179,7 +179,7 @@ def get_predictions(counts, assignments, labels=None):
     predictions = counts.groupby(["tbin"]).head(1)
     predictions = predictions.reset_index("assignment")
     if labels is not None:
-        predictions = predictions.join(labels, on='example_idx')
+        predictions = predictions.join(labels, on="example_idx")
     return predictions
 
 
