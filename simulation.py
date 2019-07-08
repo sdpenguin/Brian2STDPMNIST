@@ -365,7 +365,7 @@ def main(
                     accuracy = get_accuracy(predictions)
                     accuracy *= 100
                     progress_accuracy[subpop_e][nseen] = accuracy
-                    print(
+                    log.info(
                         "Accuracy [{}]: {:.1f}%  ({:.1f}–{:.1f}% 1σ conf. int.)".format(
                             subpop_e, *accuracy
                         )
@@ -414,7 +414,7 @@ def main(
     )
 
     if profile:
-        print(b2.profiling_summary(net, 10))
+        log.debug(b2.profiling_summary(net, 10))
 
     # -------------------------------------------------------------------------
     # save results
