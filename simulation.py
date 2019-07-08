@@ -97,6 +97,7 @@ def main(
     progress_interval=None,
     save_interval=None,
     profile=False,
+    permute_data=False,
 ):
 
     # load MNIST
@@ -129,11 +130,16 @@ def main(
         random_weights = True
         ee_STDP_on = True
         if num_epochs is None:
-            num_epochs = 1
+            num_epochs = 3
         if save_interval is None:
-            save_interval = 1000
+            save_interval = 10000
         if progress_interval is None:
-            progress_interval = 100
+            progress_interval = 1000
+
+    if permute_data:
+        sample = np.random.permutation(len(data["y"]))
+        data["x"] = data["x"][sample]
+        data["y"] = data["y"][sample]
 
     num_examples = int(len(data["y"]) * num_epochs)
     n_input = data["x"][0].size
@@ -454,6 +460,7 @@ if __name__ == "__main__":
     parser.add_argument("--progress_interval", default=None)
     parser.add_argument("--save_interval", default=None)
     parser.add_argument("--record_spikes", action="store_true")
+    parser.add_argument("--permute_data", action="store_true")
 
     args = parser.parse_args()
 
@@ -466,5 +473,6 @@ if __name__ == "__main__":
             progress_interval=args.progress_interval,
             save_interval=args.save_interval,
             profile=args.profile,
+            permute_data=args.permute_data,
         )
     )
