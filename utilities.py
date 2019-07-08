@@ -133,7 +133,8 @@ def plot_accuracy(acchist, ax=None, filename=None):
 
 
 def spike_counts_from_cumulative(
-    cumulative_spike_counts, start=0, end=None, atmost=None
+    cumulative_spike_counts, n_data,
+    start=0, end=None, atmost=None
 ):
     log.debug("Producing spike counts from cumulative counts")
     counts = np.diff(cumulative_spike_counts, axis=0)
@@ -156,6 +157,7 @@ def spike_counts_from_cumulative(
     spikecounts = spikecounts[spikecounts["tbin"] >= start]
     log.debug("Ending before tbin {}".format(end))
     spikecounts = spikecounts[spikecounts["tbin"] < end]
+    spikecounts['example_idx'] = spikecounts['tbin'] % n_data
     spikecounts = spikecounts.set_index(["tbin", "i"])
     return spikecounts
 
@@ -177,7 +179,7 @@ def get_predictions(counts, assignments, labels=None):
     predictions = counts.groupby(["tbin"]).head(1)
     predictions = predictions.reset_index("assignment")
     if labels is not None:
-        predictions = predictions.join(labels)
+        predictions = predictions.join(labels, on='example_idx')
     return predictions
 
 
@@ -191,7 +193,7 @@ def get_accuracy(predictions):
 
 
 def get_labels(data):
-    return pd.DataFrame({"label": data["y"]}).rename_axis("tbin")
+    return pd.DataFrame({"label": data["y"]}).rename_axis("example_idx")
 
 
 # adapted from astropy.stats.funcs
@@ -207,9 +209,11 @@ def binom_conf_interval(k, n, conf=0.68269):
     n = np.asarray(n).astype(int)
 
     if (n <= 0).any():
-        raise ValueError("n must be positive")
+        log.warning("%(funcName)s: n must be positive")
+        return 0
     if (k < 0).any() or (k > n).any():
-        raise ValueError("k must be in {0, 1, .., n}")
+        log.warning("%(funcName)s: k must be in {0, 1, .., n}")
+        return 0
 
     lowerbound = betaincinv(k + 0.5, n - k + 0.5, 0.5 * alpha)
     upperbound = betaincinv(k + 0.5, n - k + 0.5, 1.0 - 0.5 * alpha)

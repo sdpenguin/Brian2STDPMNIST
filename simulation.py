@@ -341,14 +341,14 @@ def main(
                     nseen = len(csc) - 1
                     log.debug("So far seen {} examples".format(nseen))
                     spikecounts_past = spike_counts_from_cumulative(
-                        csc, end=-progress_interval, atmost=100 * progress_interval
+                        csc, n_data, end=-progress_interval, atmost=100 * progress_interval
                     )
                     log.debug(
                         "Assignments based on {} spikes".format(len(spikecounts_past))
                     )
                     assignments = get_assignments(spikecounts_past, labels)
                     spikecounts_present = spike_counts_from_cumulative(
-                        csc, start=-progress_interval
+                        csc, n_data, start=-progress_interval
                     )
                     log.debug(
                         "Accuracy based on {} spikes".format(len(spikecounts_present))
