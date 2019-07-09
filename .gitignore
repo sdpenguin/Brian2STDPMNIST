@@ -1,0 +1,9 @@
+runs/
+build/
+output/
+data/
+activity/
+__pycache__/
+.ipynb*
+.pyhistory
+.idea/*
