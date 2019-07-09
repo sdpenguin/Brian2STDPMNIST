@@ -198,7 +198,7 @@ class DiehlAndCookSynapses(b2.Synapses):
                 pre = pre + 1.0
                 """
             self.post_eqn += """
-                w = clip(w + nu * (pre * exp(-beta * w) - tar * exp(-beta * (wmax - w)), 0, wmax)
+                w = clip(w + nu * (pre * exp(-beta * w) - tar * exp(-beta * (wmax - w))), 0, wmax)
                 """
         if self.stdp_rule == 'symmetric':
             # inferred code from Diehl & Cooke (2015)
