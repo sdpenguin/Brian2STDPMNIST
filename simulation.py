@@ -496,7 +496,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--size", type=int, default=400)
 
-
     args = parser.parse_args()
 
     sys.exit(
@@ -510,5 +509,6 @@ if __name__ == "__main__":
             profile=args.profile,
             permute_data=args.permute_data,
             stdp_rule=args.stdp_rule,
+            size=args.size,
         )
     )
