@@ -194,6 +194,9 @@ def main(
 
     input_intensity = 2.0
 
+    initial_weight_matrices = get_initial_weights(n_input, n_e)
+    use_premade_weights = (n_e == 400)
+
     n_pop = len(population_names)
 
     neuron_groups = {}
@@ -239,7 +242,11 @@ def main(
             # except the diagonal, which contains 10.4
             # "random" connections for AiAe is matrix with 17.0 everywhere
             # except the diagonal, which contains zero
-            weightMatrix = load_connections(connName, random=True)
+            if use_premade_weights:
+                weightMatrix = load_connections(connName, random=True)
+            else:
+                log.info('Using generated initial weight matrices')
+                weightMatrix = initial_weight_matrices[connName]
             conn.w = weightMatrix.flatten()
 
         log.debug(f"Creating spike monitors for {name}")
@@ -300,7 +307,11 @@ def main(
             maxDelay = delay[connType][1]
             deltaDelay = maxDelay - minDelay
             conn.delay = "minDelay + rand() * deltaDelay"
-            weightMatrix = load_connections(connName, random=random_weights)
+            if use_premade_weights:
+                weightMatrix = load_connections(connName, random=random_weights)
+            else:
+                log.info('Using generated initial weight matrices')
+                weightMatrix = initial_weight_matrices[connName]
             conn.w = weightMatrix.flatten()
 
     if ee_STDP_on:

@@ -51,6 +51,20 @@ def connections_to_file(conn, filename):
     np.save(filename, connListSparse)
 
 
+def get_initial_weights(n_input, n_e):
+    matrices = {}
+    npr = np.random.RandomState(9728364)
+    matrices['AeAi'] = np.eye(n_e) * 10.4
+    matrices['AiAe'] = 17.0 * (1 - np.eye(n_e))
+    matrices['XeAe'] = npr.uniform(0.003, 0.303, (n_input, n_e))
+    new = np.zeros((n_input, n_e))
+    n_connect = int(0.1 * n_input * n_e)
+    connect = npr.choice(n_input * n_e, n_connect, replace=False)
+    new.flat[connect] = npr.uniform(0.0, 0.2, n_connect)
+    matrices['XeAi'] = new
+    return matrices
+
+
 def rearrange_weights(weights):
     n_input = weights.shape[0]
     n_e = weights.shape[1]
