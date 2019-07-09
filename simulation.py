@@ -33,6 +33,8 @@ import numpy as np
 import brian2 as b2
 import pickle
 import time
+import datetime
+from inspect import getargvalues, currentframe
 
 from utilities import *
 
@@ -91,14 +93,26 @@ def save_theta(population_names, neuron_groups, iteration=None):
 
 def main(
     test_mode=True,
-    runname="",
+    runname=None,
     num_epochs=None,
     record_spikes=False,
     progress_interval=None,
     save_interval=None,
     profile=False,
     permute_data=False,
+    stdp_rule="original",
+    size=400,
 ):
+
+    if runname is None:
+        runname = datetime.datetime.now().replace(microsecond=0).isoformat()
+
+    log.info('Brian2STDPMNIST/simulation.py')
+    log.info('Arguments =============')
+    args, _, _, values = getargvalues(currentframe())
+    for a in args:
+        log.info(f'{a}: {values[a]}')
+    log.info('=======================')
 
     # load MNIST
     training, testing = get_labeled_data()
@@ -132,9 +146,9 @@ def main(
         if num_epochs is None:
             num_epochs = 3
         if save_interval is None:
-            save_interval = 10000
+            save_interval = 1000
         if progress_interval is None:
-            progress_interval = 1000
+            progress_interval = 100
 
     if permute_data:
         sample = np.random.permutation(len(data["y"]))
@@ -156,7 +170,7 @@ def main(
     b2.defaultclock.dt = 0.5 * b2.ms
     log.info("defaultclock.dt = {}".format(str(b2.defaultclock.dt)))
 
-    n_e = 400
+    n_e = size
     n_i = n_e
 
     single_example_time = 0.35 * b2.second
@@ -257,8 +271,10 @@ def main(
     # -------------------------------------------------------------------------
     for k, name in enumerate(input_population_names):
         subpop_e = name + "e"
+        # stimulus is repeated for duration of simulation
+        # (i.e. if there are multiple epochs)
         input_groups[subpop_e] = b2.PoissonGroup(
-            n_input, rates="stimulus(t%total_data_time, i)"
+            n_input, rates="stimulus(t % total_data_time, i)"
         )
         log.debug(f"Creating spike monitors for {name}")
         spike_monitors[subpop_e] = b2.SpikeMonitor(
@@ -277,6 +293,7 @@ def main(
                 neuron_groups[postName],
                 conn_type=connType,
                 stdp_on=ee_STDP_on,
+                stdp_rule=stdp_rule,
             )
             conn.connect()  # all-to-all connection
             minDelay = delay[connType][0]
@@ -457,13 +474,28 @@ if __name__ == "__main__":
     mode_group.add_argument(
         "--train", dest="test_mode", action="store_false", help="Enable train mode"
     )
-    parser.add_argument("--runname", default="")
-    parser.add_argument("--profile", default="")
-    parser.add_argument("--num_epochs", default=None)
-    parser.add_argument("--progress_interval", default=None)
-    parser.add_argument("--save_interval", default=None)
+    parser.add_argument("--runname", type=str, default=None)
+    parser.add_argument("--profile", action="store_true")
+    parser.add_argument("--num_epochs", type=int, default=None)
+    parser.add_argument("--progress_interval", type=int, default=None)
+    parser.add_argument("--save_interval", type=int, default=None)
     parser.add_argument("--record_spikes", action="store_true")
     parser.add_argument("--permute_data", action="store_true")
+    parser.add_argument(
+        "--stdp_rule",
+        type = str,
+        default="original",
+        choices=[
+            "original",
+            "minimal-triplet",
+            "full-triplet",
+            "powerlaw",
+            "exponential",
+            "symmetric",
+        ],
+    )
+    parser.add_argument("--size", type=int, default=400)
+
 
     args = parser.parse_args()
 
@@ -477,5 +509,6 @@ if __name__ == "__main__":
             save_interval=args.save_interval,
             profile=args.profile,
             permute_data=args.permute_data,
+            stdp_rule=args.stdp_rule,
         )
     )
