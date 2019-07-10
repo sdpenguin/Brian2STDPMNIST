@@ -205,7 +205,7 @@ def get_accuracy(predictions):
         return None
     mid = k / n
     lower, upper = binom_conf_interval(k, n)
-    return np.array([mid, lower, upper])
+    return np.array([mid, lower, upper]) * 100  # as percentages
 
 
 def get_labels(data):
