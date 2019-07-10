@@ -201,6 +201,8 @@ def get_accuracy(predictions):
     match = predictions["assignment"] == predictions["label"]
     k = match.sum()
     n = len(predictions)
+    if n == 0:
+        return None
     mid = k / n
     lower, upper = binom_conf_interval(k, n)
     return np.array([mid, lower, upper])
@@ -224,10 +226,10 @@ def binom_conf_interval(k, n, conf=0.68269):
 
     if (n <= 0).any():
         log.warning("%(funcName)s: n must be positive")
-        return 0
+        return 0, 0
     if (k < 0).any() or (k > n).any():
         log.warning("%(funcName)s: k must be in {0, 1, .., n}")
-        return 0
+        return 0, 0
 
     lowerbound = betaincinv(k + 0.5, n - k + 0.5, 0.5 * alpha)
     upperbound = betaincinv(k + 0.5, n - k + 0.5, 1.0 - 0.5 * alpha)

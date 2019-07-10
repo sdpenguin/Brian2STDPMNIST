@@ -387,24 +387,29 @@ def main(
                     spikecounts_present = spike_counts_from_cumulative(
                         csc, n_data, start=-progress_interval
                     )
-                    log.debug(
-                        "Accuracy based on {} spikes".format(len(spikecounts_present))
-                    )
-                    predictions = get_predictions(
-                        spikecounts_present, assignments, labels
-                    )
-                    accuracy = get_accuracy(predictions)
-                    accuracy *= 100
-                    progress_accuracy[subpop_e][nseen] = accuracy
-                    log.info(
-                        "Accuracy [{}]: {:.1f}%  ({:.1f}–{:.1f}% 1σ conf. int.)".format(
-                            subpop_e, *accuracy
+                    n_spikes_present = len(spikecounts_present)
+                    if n_spikes_present == 0:
+                        log.debug(
+                            "No spikes in present interval - skipping accuracy estimate"
                         )
-                    )
-                    fn = os.path.join(
-                        config.output_path, "accuracy-{}.pdf".format(subpop_e)
-                    )
-                    plot_accuracy(progress_accuracy[subpop_e], filename=fn)
+                    else:
+                        log.debug(
+                            "Accuracy based on {} spikes".format(n_spikes_present)
+                        )
+                        predictions = get_predictions(
+                            spikecounts_present, assignments, labels
+                        )
+                        accuracy = get_accuracy(predictions)
+                        progress_accuracy[subpop_e][nseen] = accuracy
+                        log.info(
+                            "Accuracy [{}]: {:.1f}%  ({:.1f}–{:.1f}% 1σ conf. int.)".format(
+                                subpop_e, *accuracy
+                            )
+                        )
+                        fn = os.path.join(
+                            config.output_path, "accuracy-{}.pdf".format(subpop_e)
+                        )
+                        plot_accuracy(progress_accuracy[subpop_e], filename=fn)
 
                 fn = os.path.join(config.output_path, "weights.pdf")
                 plot_weights(
