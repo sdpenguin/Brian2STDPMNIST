@@ -146,9 +146,9 @@ def main(
         if num_epochs is None:
             num_epochs = 3
         if save_interval is None:
-            save_interval = 1000
+            save_interval = 10000
         if progress_interval is None:
-            progress_interval = 100
+            progress_interval = 1000
 
     if permute_data:
         sample = np.random.permutation(len(data["y"]))
