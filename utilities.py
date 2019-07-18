@@ -89,8 +89,10 @@ def plot_weights(weights, assignments=None, max_weight=1.0, ax=None, filename=No
     rearranged_weights = rearrange_weights(weights)
     closefig = False
     if ax is None:
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(10, 10))
         closefig = True
+    else:
+        fig = None
     im = ax.imshow(
         rearranged_weights,
         interpolation="nearest",
@@ -98,6 +100,8 @@ def plot_weights(weights, assignments=None, max_weight=1.0, ax=None, filename=No
         vmax=max_weight,
         cmap=cm.hot_r,
     )
+    ax.xaxis.set_ticks([])
+    ax.yaxis.set_ticks([])
     add_colorbar(im)
     if assignments is not None:
         n_in_sqrt = int(np.sqrt(weights.shape[0]))
@@ -116,7 +120,7 @@ def plot_weights(weights, assignments=None, max_weight=1.0, ax=None, filename=No
                     a[i, j],
                     horizontalalignment="right",
                     verticalalignment="bottom",
-                    fontsize=4,
+                    fontsize='x-small',
                 )
                 txt.set_path_effects(
                     [path_effects.withStroke(linewidth=1, foreground="w")]
@@ -125,6 +129,7 @@ def plot_weights(weights, assignments=None, max_weight=1.0, ax=None, filename=No
         ax.get_figure().savefig(filename)
     if closefig:
         plt.close(fig)
+    return fig
 
 
 def plot_accuracy(acchist, ax=None, filename=None):
@@ -132,6 +137,8 @@ def plot_accuracy(acchist, ax=None, filename=None):
     if ax is None:
         fig, ax = plt.subplots()
         closefig = True
+    else:
+        fig = None
     i = np.array(list(acchist.keys()))
     a = np.array(list(acchist.values()))
     amid, alow, ahigh = a.T
@@ -144,6 +151,7 @@ def plot_accuracy(acchist, ax=None, filename=None):
         ax.get_figure().savefig(filename)
     if closefig:
         plt.close(fig)
+    return fig
 
 
 def spike_counts_from_cumulative(
