@@ -52,6 +52,14 @@ def connections_to_file(conn, filename):
     np.save(filename, connListSparse)
 
 
+def connections_to_pandas(conn):
+    return pd.DataFrame({'i': conn.i[:], 'j': conn.j[:], 'w': conn.w[:]})
+
+
+def theta_to_pandas(subpop, neuron_groups):
+    return pd.Series(neuron_groups[subpop].theta[:])
+
+
 def get_initial_weights(n_input, n_e):
     matrices = {}
     npr = np.random.RandomState(9728364)
@@ -288,15 +296,16 @@ def get_predictions(counts, assignments, labels=None):
     return predictions
 
 
-def get_accuracy(predictions):
+def get_accuracy(predictions, nseen=0):
     match = predictions["assignment"] == predictions["label"]
     k = match.sum()
     n = len(predictions)
     if n == 0:
         return None
-    mid = k / n
-    lower, upper = binom_conf_interval(k, n)
-    return np.array([mid, lower, upper]) * 100  # as percentages
+    mid = 100 * k / n
+    lower, upper = 100 * binom_conf_interval(k, n)
+    return pd.DataFrame({'mid': mid, 'lower': lower, 'upper': upper},
+                        index=[nseen])
 
 
 def get_labels(data):
@@ -352,3 +361,7 @@ def add_colorbar(im, aspect=20, pad_fraction=0.5, **kwargs):
     cax = divider.append_axes("right", size=width, pad=pad)
     plt.sca(current_ax)
     return im.axes.figure.colorbar(im, cax=cax, **kwargs)
+
+
+def get_metadata(store):
+    return store.root._v_attrs

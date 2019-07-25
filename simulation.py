@@ -22,11 +22,6 @@ import logging
 logging.captureWarnings(True)
 log = logging.getLogger("spiking-mnist")
 log.setLevel(logging.DEBUG)
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
-formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
-ch.setFormatter(formatter)
-log.addHandler(ch)
 
 import os.path
 import numpy as np
@@ -34,7 +29,7 @@ import brian2 as b2
 import pickle
 import time
 import datetime
-from inspect import getargvalues, currentframe
+from inspect import getargvalues, currentframe, getframeinfo
 
 from utilities import *
 
@@ -42,6 +37,7 @@ from neurons import DiehlAndCookExcitatoryNeuronGroup, DiehlAndCookInhibitoryNeu
 from synapses import DiehlAndCookSynapses
 
 from IPython import embed
+
 
 # b2.set_device('cpp_standalone', build_on_run=False)
 
@@ -56,7 +52,7 @@ def load_connections(connName, random=True):
         path = config.random_weight_path
     else:
         path = config.weight_path
-    filename = os.path.join(config.data_path, path, "{}.npy".format(connName))
+    filename = os.path.join(path, "{}.npy".format(connName))
     return get_matrix_from_file(filename)
 
 
@@ -65,7 +61,7 @@ def save_connections(connections, iteration=None):
         log.info("Saving connections {}".format(connName))
         conn = connections[connName]
         filename = os.path.join(
-            config.data_path, config.weight_path, "{}".format(connName)
+            config.weight_path, "{}".format(connName)
         )
         if iteration is not None:
             filename += "-{:06d}".format(iteration)
@@ -75,7 +71,7 @@ def save_connections(connections, iteration=None):
 def load_theta(population_name):
     log.info("Loading theta for population {}".format(population_name))
     filename = os.path.join(
-        config.data_path, config.weight_path, "theta_{}.npy".format(population_name)
+        config.weight_path, "theta_{}.npy".format(population_name)
     )
     return np.load(filename) * b2.volt
 
@@ -84,53 +80,54 @@ def save_theta(population_names, neuron_groups, iteration=None):
     log.info("Saving theta")
     for pop_name in population_names:
         filename = os.path.join(
-            config.data_path, config.weight_path, "theta_{}".format(pop_name)
+            config.weight_path, "theta_{}".format(pop_name)
         )
         if iteration is not None:
             filename += "-{:06d}".format(iteration)
         np.save(filename, neuron_groups[pop_name + "e"].theta)
 
 
-def main(
-    test_mode=True,
-    runname=None,
-    num_epochs=None,
-    record_spikes=False,
-    progress_interval=None,
-    save_interval=None,
-    profile=False,
-    permute_data=False,
-    stdp_rule="original",
-    size=400,
+def main(**kwargs):
+    if kwargs['runname'] is None:
+        kwargs['runname'] = datetime.datetime.now().replace(microsecond=0).isoformat()
+    outputpath = os.path.join(kwargs['output'], kwargs['runname'])
+    try:
+        os.makedirs(outputpath, exist_ok=kwargs['clobber'])
+    except (OSError, FileExistsError):
+        print(f'Refusing to overwrite existing output files in {outputpath}')
+        print(f'Use --clobber to force overwriting')
+    logfilename = os.path.join(outputpath, 'output.log')
+    fh = logging.FileHandler(logfilename, 'w')
+    fh.setLevel(logging.DEBUG if kwargs['debug'] else logging.INFO)
+    formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
+    fh.setFormatter(formatter)
+    log.addHandler(fh)
+    storefilename = os.path.join(outputpath, 'store.h5')
+    with pd.HDFStore(storefilename, complib='blosc', complevel=9) as store:
+        kwargs['store'] = store
+        simulation(**kwargs)
+
+
+def simulation(
+        test_mode=True,
+        runname=None,
+        num_epochs=None,
+        record_spikes=False,
+        progress_interval=None,
+        progress_assignments_window=None,
+        progress_accuracy_window=None,
+        save_interval=None,
+        profile=False,
+        permute_data=False,
+        stdp_rule="original",
+        size=400,
+        store=None,
+        **kwargs
 ):
-
-    if runname is None:
-        runname = datetime.datetime.now().replace(microsecond=0).isoformat()
-
-    log.info('Brian2STDPMNIST/simulation.py')
-    log.info('Arguments =============')
-    args, _, _, values = getargvalues(currentframe())
-    for a in args:
-        log.info(f'{a}: {values[a]}')
-    log.info('=======================')
-
-    # load MNIST
-    training, testing = get_labeled_data()
-    config.classes = np.unique(training["y"])
-    config.num_classes = len(config.classes)
-
-    # configuration
-    np.random.seed(0)
-    config.data_path = "./"
-    config.random_weight_path = "random/"
-    config.weight_path = os.path.join("runs", runname, "weights/")
-    os.makedirs(config.weight_path, exist_ok=True)
-    log.info("Running {}".format(runname))
-    config.output_path = os.path.join("runs", runname, "output/")
-    os.makedirs(config.output_path, exist_ok=True)
+    metadata = get_metadata(store)
+    metadata.nseen = 0
 
     if test_mode:
-        data = testing
         random_weights = False
         ee_STDP_on = False
         if num_epochs is None:
@@ -140,15 +137,51 @@ def main(
         if progress_interval is None:
             progress_interval = 0
     else:
-        data = training
         random_weights = True
         ee_STDP_on = True
         if num_epochs is None:
             num_epochs = 3
         if save_interval is None:
-            save_interval = 10000
+            save_interval = 0  # disable old-style saves
         if progress_interval is None:
             progress_interval = 1000
+            if progress_assignments_window is None:
+                progress_assignments_window = 10000
+            if progress_accuracy_window is None:
+                progress_accuracy_window = 10000
+
+    log.info('Brian2STDPMNIST/simulation.py')
+    log.info('Arguments =============')
+    args, _, _, values = getargvalues(currentframe())
+    for a in args:
+        log.info(f'{a}: {locals()[a]}')
+        metadata['args'] = args
+    log.info('=======================')
+
+    # load MNIST
+    training, testing = get_labeled_data()
+    config.classes = np.unique(training["y"])
+    config.num_classes = len(config.classes)
+
+    # configuration
+    np.random.seed(0)
+    modulefilename = getframeinfo(currentframe()).filename
+    config.data_path = os.path.dirname(os.path.abspath(modulefilename))
+    config.random_weight_path = os.path.join(config.data_path, "random/")
+    runpath = os.path.join("runs", runname)
+    if test_mode:
+        config.weight_path = os.path.join(config.data_path, "weights/")
+    else:
+        config.weight_path = os.path.join(runpath, "weights/")
+    os.makedirs(config.weight_path, exist_ok=True)
+    log.info("Running {}".format(runname))
+    config.output_path = os.path.join(runpath, "output/")
+    os.makedirs(config.output_path, exist_ok=True)
+
+    if test_mode:
+        data = testing
+    else:
+        data = training
 
     if permute_data:
         sample = np.random.permutation(len(data["y"]))
@@ -205,7 +238,6 @@ def main(
     spike_monitors = {}
     state_monitors = {}
     network_operations = []
-    cumulative_spike_counts = {}
 
     neuron_groups["e"] = DiehlAndCookExcitatoryNeuronGroup(
         n_e * n_pop, test_mode=test_mode
@@ -220,14 +252,14 @@ def main(
         subpop_e = name + "e"
         subpop_i = name + "i"
         nge = neuron_groups[subpop_e] = neuron_groups["e"][
-            subgroup_n * n_e : (subgroup_n + 1) * n_e
-        ]
+                                        subgroup_n * n_e: (subgroup_n + 1) * n_e
+                                        ]
         ngi = neuron_groups[subpop_i] = neuron_groups["i"][
-            subgroup_n * n_i : (subgroup_n + 1) * n_i
-        ]
+                                        subgroup_n * n_i: (subgroup_n + 1) * n_i
+                                        ]
 
         if not random_weights:
-            neuron_groups["e"].theta = load_theta(name)
+            neuron_groups[subpop_e].theta = load_theta(name)
 
         for connType in recurrent_conntype_names:
             log.info(f"Creating recurrent connections for {connType}")
@@ -253,8 +285,6 @@ def main(
         spike_monitors[subpop_e] = b2.SpikeMonitor(nge, record=record_spikes)
         spike_monitors[subpop_i] = b2.SpikeMonitor(ngi, record=record_spikes)
 
-        cumulative_spike_counts[subpop_e] = []
-
     # -------------------------------------------------------------------------
     # create TimedArray of rates for input examples
     # -------------------------------------------------------------------------
@@ -268,7 +298,7 @@ def main(
         spike_rates = data["x"][j].reshape(n_input) / 8
         spike_rates *= input_intensity
         start = j * n_dt_total
-        input_rates[start : start + n_dt_example] = spike_rates
+        input_rates[start: start + n_dt_example] = spike_rates
     input_rates = input_rates * b2.Hz
     stimulus = b2.TimedArray(input_rates, dt=input_dt)
     total_data_time = n_data * n_dt_total * input_dt
@@ -337,8 +367,12 @@ def main(
     def record_cumulative_spike_counts(t):
         for name in population_names:
             subpop_e = name + "e"
-            count = spike_monitors[subpop_e].count[:]
-            cumulative_spike_counts[subpop_e].append(count)
+            count = pd.DataFrame(spike_monitors[subpop_e].count[:][None, :])
+            count = count.rename_axis("tbin")
+            count = count.rename_axis("neuron", axis="columns")
+            store.append(f"cumulative_spike_counts/{subpop_e}", count)
+        if t > 0:
+            metadata.nseen += 1
 
     network_operations.append(record_cumulative_spike_counts)
 
@@ -361,31 +395,44 @@ def main(
         network_operations.append(save_status)
 
     if progress_interval > 0:
-        progress_accuracy = {name + "e": {} for name in population_names}
 
         @b2.network_operation(dt=total_example_time * progress_interval)
         def progress(t):
-            if t > (total_example_time * progress_interval * 1.5):
+            if t > (total_example_time * progress_interval * 0.5):
                 log.debug("Starting progress")
                 start = time.process_time()
                 labels = get_labels(data)
+                log.info("So far seen {} examples".format(metadata.nseen))
+                log.debug("Requested assignments window: {}".format(progress_assignments_window))
+                log.debug("Requested accuracy window: {}".format(progress_accuracy_window))
+                progress_window = progress_assignments_window + progress_accuracy_window
+                if progress_window < metadata.nseen:
+                    log.debug("Fewer examples have been seen than required for the requested progress windows.")
+                    log.debug("Discarding first 20% of available examples to avoid initial contamination.")
+                    log.debug("Dividing remaining examples in proportion to requested windows.")
+                    assignments_window = int(0.8 * metadata.nseen * progress_assignments_window / progress_window)
+                    accuracy_window = int(0.8 * metadata.nseen * progress_accuracy_window / progress_window)
+                else:
+                    assignments_window = progress_assignments_window
+                    accuracy_window = progress_accuracy_window
+                log.debug("Used assignments window: {}".format(assignments_window))
+                log.debug("Used accuracy window: {}".format(accuracy_window))
                 for name in population_names:
                     subpop_e = name + "e"
-                    csc = cumulative_spike_counts[subpop_e]
-                    nseen = len(csc) - 1
-                    log.debug("So far seen {} examples".format(nseen))
+                    csc = store.select(f"cumulative_spike_counts/{subpop_e}").values
                     spikecounts_past = spike_counts_from_cumulative(
                         csc,
                         n_data,
-                        end=-progress_interval,
-                        atmost=100 * progress_interval,
+                        end=-accuracy_window,
+                        atmost=assignments_window,
                     )
                     log.debug(
                         "Assignments based on {} spikes".format(len(spikecounts_past))
                     )
                     assignments = get_assignments(spikecounts_past, labels)
+                    store.put(f"assignments/{subpop_e}/n{metadata.nseen}", assignments)
                     spikecounts_present = spike_counts_from_cumulative(
-                        csc, n_data, start=-progress_interval
+                        csc, n_data, start=-accuracy_window
                     )
                     n_spikes_present = len(spikecounts_present)
                     if n_spikes_present == 0:
@@ -399,23 +446,35 @@ def main(
                         predictions = get_predictions(
                             spikecounts_present, assignments, labels
                         )
-                        accuracy = get_accuracy(predictions)
-                        progress_accuracy[subpop_e][nseen] = accuracy
+                        accuracy = get_accuracy(predictions, metadata.nseen)
+                        store.append(f"accuracy/{subpop_e}", accuracy)
                         log.info(
                             "Accuracy [{}]: {:.1f}%  ({:.1f}–{:.1f}% 1σ conf. int.)".format(
-                                subpop_e, *accuracy
+                                subpop_e, *accuracy.values.flat
                             )
                         )
                         fn = os.path.join(
                             config.output_path, "accuracy-{}.pdf".format(subpop_e)
                         )
-                        plot_accuracy(progress_accuracy[subpop_e], filename=fn)
-
-                fn = os.path.join(config.output_path, "weights.pdf")
-                plot_weights(
-                    connections["XeAe"], assignments, filename=fn, max_weight=None
-                )
-
+                        plot_accuracy(store.select(f"accuracy/{subpop_e}"), filename=fn)
+                    spikerates = spikecounts_present.groupby('i')['count'].sum()
+                    spikerates = spikerates.reindex(np.arange(n_e), fill_value=0)
+                    fn = os.path.join(
+                        config.output_path, "spikerates-{}.pdf".format(subpop_e)
+                    )
+                    plot_quantity(spikerates, filename=fn)
+                for conn in config.save_conns:
+                    subpop = conn[-2:]
+                    assignments = store.select(f"assignments/{subpop}/n{metadata.nseen}")
+                    conn_df = connections_to_pandas(connections[conn])
+                    store.append(f"connections/{conn}/n{metadata.nseen}", conn_df)
+                    theta = theta_to_pandas(subpop, neuron_groups)
+                    store.append(f"theta/{subpop}/n{metadata.nseen}", theta)
+                    fn = os.path.join(config.output_path, "weights.pdf")
+                    plot_weights(
+                        connections[conn], assignments, theta,
+                        filename=fn, max_weight=None
+                    )
                 log.debug(
                     "progress took {:.3f} seconds".format(time.process_time() - start)
                 )
@@ -491,15 +550,24 @@ if __name__ == "__main__":
         "--train", dest="test_mode", action="store_false", help="Enable train mode"
     )
     parser.add_argument("--runname", type=str, default=None)
+    parser.add_argument("--output", type=str, default='./runs/',
+                        help="Path for output files")
+    debug_group = parser.add_mutually_exclusive_group(required=False)
+    debug_group.add_argument("--debug", dest="debug", action="store_true",
+                             default=argparse.SUPPRESS,  # default to debug=True
+                             help="Include debug output from log file")
+    debug_group.add_argument("--no-debug", dest="debug", action="store_false",
+                             help="Omit debug output in log file")
+    parser.add_argument("--clobber", action="store_true")
     parser.add_argument("--profile", action="store_true")
-    parser.add_argument("--num_epochs", type=int, default=None)
+    parser.add_argument("--num_epochs", type=float, default=None)
     parser.add_argument("--progress_interval", type=int, default=None)
     parser.add_argument("--save_interval", type=int, default=None)
     parser.add_argument("--record_spikes", action="store_true")
     parser.add_argument("--permute_data", action="store_true")
     parser.add_argument(
         "--stdp_rule",
-        type = str,
+        type=str,
         default="original",
         choices=[
             "original",
@@ -518,6 +586,9 @@ if __name__ == "__main__":
         main(
             test_mode=args.test_mode,
             runname=args.runname,
+            output=args.output,
+            debug=args.debug,
+            clobber=args.clobber,
             num_epochs=args.num_epochs,
             record_spikes=args.record_spikes,
             progress_interval=args.progress_interval,
