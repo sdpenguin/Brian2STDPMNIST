@@ -9,7 +9,6 @@ rc('animation', html='html5')
 def spike_animation(spikes,
                     total_example_time,
                     imgsize=28,
-                    n_e=400,
                     example_number=None,
                     gif_filename='spikes_example',
                     max_counts=50):
