@@ -4,6 +4,7 @@ logging.captureWarnings(True)
 log = logging.getLogger("spiking-mnist")
 
 import os.path
+from math import ceil
 import numpy as np
 from scipy import sparse
 from scipy.special import betaincinv
@@ -83,7 +84,9 @@ def rearrange_weights(weights):
     return rearranged_weights
 
 
-def plot_weights(weights, assignments=None, max_weight=1.0, ax=None, filename=None):
+def plot_weights(weights, assignments=None, theta=None,
+                 max_weight=1.0, ax=None, filename=None,
+                 return_artists=False):
     if isinstance(weights, b2.Synapses):
         weights = sparse.coo_matrix((weights.w, (weights.i, weights.j))).todense()
     rearranged_weights = rearrange_weights(weights)
@@ -93,6 +96,11 @@ def plot_weights(weights, assignments=None, max_weight=1.0, ax=None, filename=No
         closefig = True
     else:
         fig = None
+    if max_weight is None:
+        max_weight = rearranged_weights.max()
+        if max_weight > 0.1:
+            # quantize to 0.25, 0.50, 0.75, 1.00
+            max_weight = ceil(max_weight * 4) / 4
     im = ax.imshow(
         rearranged_weights,
         interpolation="nearest",
@@ -103,28 +111,81 @@ def plot_weights(weights, assignments=None, max_weight=1.0, ax=None, filename=No
     ax.xaxis.set_ticks([])
     ax.yaxis.set_ticks([])
     add_colorbar(im)
-    if assignments is not None:
+    theta_text = []
+    assignments_text = []
+    if assignments is not None or theta is not None:
         n_in_sqrt = int(np.sqrt(weights.shape[0]))
         n_e = weights.shape[1]
         n_e_sqrt = int(np.sqrt(n_e))
-        a = np.zeros(n_e, np.int) - 1
-        a[assignments.index] = assignments["label"]
-        a = a.reshape((n_e_sqrt, n_e_sqrt))
-        a = a.astype(np.str)
-        a[a == "-1"] = ""
-        for i in range(n_e_sqrt):
-            for j in range(n_e_sqrt):
-                txt = ax.text(
-                    (1 + i) * n_in_sqrt - 3,
-                    (1 + j) * n_in_sqrt - 3,
-                    a[i, j],
-                    horizontalalignment="right",
-                    verticalalignment="bottom",
-                    fontsize='x-small',
-                )
-                txt.set_path_effects(
-                    [path_effects.withStroke(linewidth=1, foreground="w")]
-                )
+        if assignments is not None:
+            a = np.zeros(n_e, np.int) - 1
+            a[assignments.index] = assignments["label"]
+            a = a.reshape((n_e_sqrt, n_e_sqrt))
+            a = a.astype(np.str)
+            a[a == "-1"] = ""
+            for i in range(n_e_sqrt):
+                for j in range(n_e_sqrt):
+                    txt = ax.text(
+                        (1 + i) * n_in_sqrt - 3,
+                        (1 + j) * n_in_sqrt - 3,
+                        a[i, j],
+                        horizontalalignment="right",
+                        verticalalignment="bottom",
+                        fontsize='x-small',
+                    )
+                    txt.set_path_effects(
+                        [path_effects.withStroke(linewidth=1, foreground="w")]
+                    )
+                    assignments_text.append(txt)
+        if theta is not None:
+            t = theta.values.reshape((n_e_sqrt, n_e_sqrt)) * 1000  # mV
+            for i in range(n_e_sqrt):
+                for j in range(n_e_sqrt):
+                    txt = ax.text(
+                        (1 + i) * n_in_sqrt - 3,
+                        j * n_in_sqrt + 3,
+                        f"{t[i, j]:4.2f}",
+                        horizontalalignment="right",
+                        verticalalignment="top",
+                        fontsize='x-small',
+                    )
+                    txt.set_path_effects(
+                        [path_effects.withStroke(linewidth=1, foreground="w")]
+                    )
+                    theta_text.append(txt)
+    if filename is not None:
+        ax.get_figure().savefig(filename)
+    if closefig:
+        plt.close(fig)
+    if return_artists:
+        return fig, ax, im, assignments_text, theta_text
+    else:
+        return fig
+
+
+def plot_quantity(quantity=None, max_quantity=None, ax=None, filename=None):
+    if isinstance(quantity, pd.Series):
+        quantity = quantity.values
+    n_sqrt = int(np.sqrt(quantity.size))
+    quantity = quantity.reshape((n_sqrt, n_sqrt))
+    closefig = False
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(10, 10))
+        closefig = True
+    else:
+        fig = None
+    if max_quantity is None:
+        max_quantity = quantity.max()
+    im = ax.imshow(
+        quantity,
+        interpolation="nearest",
+        vmin=0,
+        vmax=max_quantity,
+        cmap=cm.hot_r,
+    )
+    ax.xaxis.set_ticks([])
+    ax.yaxis.set_ticks([])
+    add_colorbar(im)
     if filename is not None:
         ax.get_figure().savefig(filename)
     if closefig:
@@ -139,14 +200,36 @@ def plot_accuracy(acchist, ax=None, filename=None):
         closefig = True
     else:
         fig = None
-    i = np.array(list(acchist.keys()))
-    a = np.array(list(acchist.values()))
-    amid, alow, ahigh = a.T
+    i = acchist.index
+    amid, alow, ahigh = acchist.values.T
     ax.fill_between(i, alow, ahigh, facecolor="blue", alpha=0.5)
     ax.plot(i, amid, color="blue")
     ax.set_xlabel("examples seen")
     ax.set_ylabel("accuracy")
     ax.set_xlim(xmin=0)
+    ax.set_ylim(ymin=0, ymax=100)
+    if filename is not None:
+        ax.get_figure().savefig(filename)
+    if closefig:
+        plt.close(fig)
+    return fig
+
+
+def plot_theta_mean(thetahist, ax=None, filename=None):
+    closefig = False
+    if ax is None:
+        fig, ax = plt.subplots()
+        closefig = True
+    else:
+        fig = None
+    i = thetahist.index
+    amid, alow, ahigh = thetahist.values.T
+    ax.fill_between(i, alow, ahigh, facecolor="blue", alpha=0.5)
+    ax.plot(i, amid, color="blue")
+    ax.set_xlabel("examples seen")
+    ax.set_ylabel("accuracy")
+    ax.set_xlim(xmin=0)
+    ax.set_ylim(ymin=0, ymax=100)
     if filename is not None:
         ax.get_figure().savefig(filename)
     if closefig:
