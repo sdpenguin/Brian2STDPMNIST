@@ -11,18 +11,14 @@ rc("animation", html="html5")
 
 def weight_animation(store_filename, conn, gif_filename="weights_example", sample=None):
     with pd.HDFStore(store_filename, "r") as store:
-        nseen = [
-            int(k.split("/")[-1][1:])
-            for k in store.keys()
-            if f"connections/{conn}" in k
-        ]
-        nseen.sort()
+        nseen = store.select("nseen")
         if sample is not None:
-            nseen = nseen[::sample]
-        weights0 = store.select(f"connections/{conn}/n{nseen[0]}")
+            nseen = nseen.iloc[::sample]
+        firstseen = nseen.iloc[0]
+        weights0 = store.select(f"connections/{conn}", where="nseen == firstseen").reset_index('nseen', drop=True)
         weights0 = sparse.coo_matrix((weights0.w, (weights0.i, weights0.j))).todense()
-        assignments0 = store.select(f"assignments/{conn[-2:]}/n{nseen[0]}")
-        theta0 = store.select(f"theta/{conn[-2:]}/n{nseen[0]}")
+        assignments0 = store.select(f"assignments/{conn[-2:]}", where="nseen == firstseen").reset_index('nseen', drop=True)
+        theta0 = store.select(f"theta/{conn[-2:]}", where="nseen == firstseen")
         fig, ax, img, assignments_text, theta_text = plot_weights(
             weights0,
             assignments=assignments0,
@@ -34,7 +30,7 @@ def weight_animation(store_filename, conn, gif_filename="weights_example", sampl
         n = len(theta0)
 
         def init():
-            update_image(0)
+            update_image(nseen[0])
             return [title, img]
 
         def animate(t):
@@ -42,18 +38,18 @@ def weight_animation(store_filename, conn, gif_filename="weights_example", sampl
             return [title, img]
 
         def update_image(t):
-            weights = store.select(f"connections/{conn}/n{nseen[t]}")
+            weights = store.select(f"connections/{conn}", where="nseen == t").reset_index('nseen', drop=True)
             weights = sparse.coo_matrix((weights.w, (weights.i, weights.j))).todense()
             rearranged_weights = rearrange_weights(weights)
             arr = img.get_array()
             arr[:] = rearranged_weights
-            title.set_text(f"examples seen: {nseen[t]}")
-            assignments = store.select(f"assignments/{conn[-2:]}/n{nseen[t]}")
+            title.set_text(f"examples seen: {t}")
+            assignments = store.select(f"assignments/{conn[-2:]}", where="nseen == t").reset_index('nseen', drop=True)
             ass = np.zeros(n, np.int) - 1
             ass[assignments.index] = assignments["label"]
             ass = ass.astype(np.str)
             ass[ass == "-1"] = ""
-            theta = store.select(f"theta/{conn[-2:]}/n{nseen[t]}")
+            theta = store.select(f"theta/{conn[-2:]}", where="nseen == t")
             theta = theta.values * 1000  # mV
             for k in range(n):
                 assignments_text[k].set_text(ass[k])
@@ -64,7 +60,7 @@ def weight_animation(store_filename, conn, gif_filename="weights_example", sampl
             fig,
             animate,
             init_func=init,
-            frames=np.arange(len(nseen)),
+            frames=nseen,
             interval=duration / len(nseen),
             repeat=False,
             blit=True,
@@ -72,7 +68,7 @@ def weight_animation(store_filename, conn, gif_filename="weights_example", sampl
         plt.close()
         if gif_filename is not None:
             anim.save(
-                "{}.gif".format(gif_filename),
+                "{}.gif".format(rreplace(gif_filename, '.gif', '')),
                 writer="imagemagick",
                 fps=1000 * len(nseen) / duration,
             )
