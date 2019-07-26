@@ -160,6 +160,7 @@ def simulation(
     log.info('Brian2STDPMNIST/simulation.py')
     log.info('Arguments =============')
     args, _, _, values = getargvalues(currentframe())
+    args.remove('store')
     for a in args:
         log.info(f'{a}: {locals()[a]}')
         metadata['args'] = args
@@ -459,11 +460,11 @@ def simulation(
                     fn = os.path.join(
                         config.output_path, "spikerates-{}.pdf".format(subpop_e)
                     )
-                    plot_quantity(spikerates, filename=fn)
-                    # fn = os.path.join(
-                    #    config.output_path, "spikerates-summary-{}.pdf".format(subpop_e)
-                    # )
-                    # plot_rates_summary(store.select(f"rates/{subpop}"), filename=fn)
+                    plot_quantity(spikerates, filename=fn, label="spike rate", nseen=metadata.nseen)
+                    fn = os.path.join(
+                       config.output_path, "spikerates-summary-{}.pdf".format(subpop_e)
+                    )
+                    plot_rates_summary(store.select(f"rates/{subpop_e}"), filename=fn)
                 for conn in config.save_conns:
                     subpop = conn[-2:]
                     assignments = store.select(f"assignments/{subpop}", where="nseen == metadata.nseen")
@@ -475,12 +476,16 @@ def simulation(
                     fn = os.path.join(config.output_path, "weights.pdf")
                     plot_weights(
                         connections[conn], assignments, theta,
-                        filename=fn, max_weight=None
+                        filename=fn, max_weight=None, nseen=metadata.nseen
                     )
-                    # fn = os.path.join(
-                    #    config.output_path, "theta-summary-{}.pdf".format(subpop_e)
-                    # )
-                    # plot_theta_summary(store.select(f"theta/{subpop}"), filename=fn)
+                    fn = os.path.join(
+                        config.output_path, "theta-{}.pdf".format(subpop_e)
+                    )
+                    plot_quantity(theta / b2.mV, filename=fn, label="theta (mV)", nseen=metadata.nseen)
+                    fn = os.path.join(
+                       config.output_path, "theta-summary-{}.pdf".format(subpop_e)
+                    )
+                    plot_theta_summary(store.select(f"theta/{subpop}"), filename=fn)
                 log.debug(
                     "progress took {:.3f} seconds".format(time.process_time() - start)
                 )

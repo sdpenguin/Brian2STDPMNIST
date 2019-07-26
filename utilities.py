@@ -99,16 +99,11 @@ def rearrange_weights(weights):
 
 def plot_weights(weights, assignments=None, theta=None,
                  max_weight=1.0, ax=None, filename=None,
-                 return_artists=False):
+                 return_artists=False, nseen=None):
     if isinstance(weights, b2.Synapses):
         weights = sparse.coo_matrix((weights.w, (weights.i, weights.j))).todense()
     rearranged_weights = rearrange_weights(weights)
-    closefig = False
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(10, 10))
-        closefig = True
-    else:
-        fig = None
+    fig, ax, closefig = openfig(ax, figsize=(10, 10))
     if max_weight is None:
         max_weight = rearranged_weights.max()
         if max_weight > 0.1:
@@ -123,7 +118,10 @@ def plot_weights(weights, assignments=None, theta=None,
     )
     ax.xaxis.set_ticks([])
     ax.yaxis.set_ticks([])
-    add_colorbar(im)
+    if nseen is not None:
+        ax.set_title(f"examples seen: {nseen: 6d}", loc="right")
+    cbar = add_colorbar(im)
+    cbar.set_label('weight')
     theta_text = []
     assignments_text = []
     if assignments is not None or theta is not None:
@@ -166,27 +164,19 @@ def plot_weights(weights, assignments=None, theta=None,
                         [path_effects.withStroke(linewidth=1, foreground="w")]
                     )
                     theta_text.append(txt)
-    if filename is not None:
-        ax.get_figure().savefig(filename)
-    if closefig:
-        plt.close(fig)
+    endfig(filename, fig, ax, closefig)
     if return_artists:
         return fig, ax, im, assignments_text, theta_text
     else:
         return fig
 
 
-def plot_quantity(quantity=None, max_quantity=None, ax=None, filename=None):
+def plot_quantity(quantity=None, max_quantity=None, ax=None, filename=None, label='', nseen=None):
     if isinstance(quantity, pd.Series):
         quantity = quantity.values
     n_sqrt = int(np.sqrt(quantity.size))
     quantity = quantity.reshape((n_sqrt, n_sqrt))
-    closefig = False
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(10, 10))
-        closefig = True
-    else:
-        fig = None
+    fig, ax, closefig = openfig(ax, figsize=(10, 10))
     if max_quantity is None:
         max_quantity = quantity.max()
     im = ax.imshow(
@@ -194,60 +184,85 @@ def plot_quantity(quantity=None, max_quantity=None, ax=None, filename=None):
         interpolation="nearest",
         vmin=0,
         vmax=max_quantity,
-        cmap=cm.hot_r,
+        cmap=cm.hot,
     )
     ax.xaxis.set_ticks([])
     ax.yaxis.set_ticks([])
-    add_colorbar(im)
-    if filename is not None:
-        ax.get_figure().savefig(filename)
-    if closefig:
-        plt.close(fig)
+    if nseen is not None:
+        ax.set_title(f"examples seen: {nseen: 6d}", loc="right")
+    cbar = add_colorbar(im)
+    cbar.set_label(label)
+    endfig(filename, fig, ax, closefig)
     return fig
 
 
 def plot_accuracy(acchist, ax=None, filename=None):
-    closefig = False
-    if ax is None:
-        fig, ax = plt.subplots()
-        closefig = True
-    else:
-        fig = None
+    fig, ax, closefig = openfig(ax)
     i = acchist.index
     amid, alow, ahigh = acchist.values.T
     ax.fill_between(i, alow, ahigh, facecolor="blue", alpha=0.5)
     ax.plot(i, amid, color="blue")
     ax.set_xlabel("examples seen")
-    ax.set_ylabel("accuracy")
+    ax.set_ylabel("accuracy (mean and 95% conf. int.")
     ax.set_xlim(xmin=0)
     ax.set_ylim(ymin=0, ymax=100)
-    if filename is not None:
-        ax.get_figure().savefig(filename)
-    if closefig:
-        plt.close(fig)
+    endfig(filename, fig, ax, closefig)
     return fig
 
 
-def plot_theta_mean(thetahist, ax=None, filename=None):
+def plot_theta_summary(thetahist, ax=None, filename=None):
+    fig, ax, closefig = openfig(ax)
+    thetahist = thetahist.groupby('nseen')
+    tlow = thetahist.quantile(0.025)
+    tmid = thetahist.quantile(0.5)
+    thigh = thetahist.quantile(0.975)
+    ax.fill_between(tmid.index, tlow, thigh, facecolor="blue", alpha=0.5)
+    ax.plot(tmid.index, tmid, color="blue")
+    ax.set_xlabel("examples seen")
+    ax.set_ylabel("theta (median and 95% range)")
+    ax.set_xlim(xmin=0)
+    endfig(filename, fig, ax, closefig)
+    return fig
+
+
+def plot_rates_summary(ratehist, ax=None, filename=None):
+    fig, ax, closefig = openfig(ax)
+    ratehist = ratehist.groupby('nseen')
+    tlow = ratehist.quantile(0.025)
+    tmid = ratehist.quantile(0.5)
+    thigh = ratehist.quantile(0.975)
+    ax.fill_between(tmid.index, tlow, thigh, facecolor="blue", alpha=0.5)
+    ax.plot(tmid.index, tmid, color="blue")
+    ax.set_xlabel("examples seen")
+    ax.set_ylabel("spike rate (median and 95% range)")
+    ax.set_xlim(xmin=0)
+    endfig(filename, fig, ax, closefig)
+    return fig
+
+
+def openfig(ax, figsize=None):
     closefig = False
     if ax is None:
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=figsize)
         closefig = True
     else:
         fig = None
-    i = thetahist.index
-    amid, alow, ahigh = thetahist.values.T
-    ax.fill_between(i, alow, ahigh, facecolor="blue", alpha=0.5)
-    ax.plot(i, amid, color="blue")
-    ax.set_xlabel("examples seen")
-    ax.set_ylabel("accuracy")
-    ax.set_xlim(xmin=0)
-    ax.set_ylim(ymin=0, ymax=100)
+    return fig, ax, closefig
+
+
+def endfig(filename, fig, ax, closefig, nseen=None):
     if filename is not None:
-        ax.get_figure().savefig(filename)
+        f = ax.get_figure()
+        f.savefig(filename)
+        if nseen is not None:
+            f.savefig(rreplace(filename, ".", f"-n{nseen:06d}."))
     if closefig:
         plt.close(fig)
-    return fig
+
+
+def rreplace(s, old, new, occurrence=1):
+    li = s.rsplit(old, occurrence)
+    return new.join(li)
 
 
 def spike_counts_from_cumulative(
@@ -310,7 +325,7 @@ def get_accuracy(predictions, nseen):
     if n == 0:
         return None
     mid = 100 * k / n
-    lower, upper = 100 * binom_conf_interval(k, n)
+    lower, upper = 100 * binom_conf_interval(k, n, conf=0.95)
     return pd.DataFrame({'mid': mid, 'lower': lower, 'upper': upper},
                         index=[nseen])
 
