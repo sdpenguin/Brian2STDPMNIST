@@ -52,12 +52,17 @@ def connections_to_file(conn, filename):
     np.save(filename, connListSparse)
 
 
-def connections_to_pandas(conn):
-    return pd.DataFrame({'i': conn.i[:], 'j': conn.j[:], 'w': conn.w[:]})
+def connections_to_pandas(conn, nseen):
+    df = pd.DataFrame({'i': conn.i[:], 'j': conn.j[:], 'w': conn.w[:]})
+    df['nseen'] = nseen
+    df = df.set_index('nseen', append=True)
+    return df
 
 
-def theta_to_pandas(subpop, neuron_groups):
-    return pd.Series(neuron_groups[subpop].theta[:])
+def theta_to_pandas(subpop, neuron_groups, nseen):
+    t = pd.Series(neuron_groups[subpop].theta[:])
+    t = add_nseen_index(t, nseen)
+    return t
 
 
 def get_initial_weights(n_input, n_e):
@@ -87,7 +92,7 @@ def rearrange_weights(weights):
         for j in range(n_e_sqrt):
             wk = weights[:, i + j * n_e_sqrt].reshape((n_in_sqrt, n_in_sqrt))
             rearranged_weights[
-                i * n_in_sqrt : (i + 1) * n_in_sqrt, j * n_in_sqrt : (j + 1) * n_in_sqrt
+            i * n_in_sqrt: (i + 1) * n_in_sqrt, j * n_in_sqrt: (j + 1) * n_in_sqrt
             ] = wk
     return rearranged_weights
 
@@ -246,8 +251,10 @@ def plot_theta_mean(thetahist, ax=None, filename=None):
 
 
 def spike_counts_from_cumulative(
-    cumulative_spike_counts, n_data, start=0, end=None, atmost=None
+        cumulative_spike_counts, n_data, start=0, end=None, atmost=None
 ):
+    if isinstance(cumulative_spike_counts, pd.DataFrame):
+        cumulative_spike_counts = cumulative_spike_counts.values
     log.debug("Producing spike counts from cumulative counts")
     counts = np.diff(cumulative_spike_counts, axis=0)
     ntbin = len(counts)
@@ -296,7 +303,7 @@ def get_predictions(counts, assignments, labels=None):
     return predictions
 
 
-def get_accuracy(predictions, nseen=0):
+def get_accuracy(predictions, nseen):
     match = predictions["assignment"] == predictions["label"]
     k = match.sum()
     n = len(predictions)
@@ -306,6 +313,12 @@ def get_accuracy(predictions, nseen=0):
     lower, upper = 100 * binom_conf_interval(k, n)
     return pd.DataFrame({'mid': mid, 'lower': lower, 'upper': upper},
                         index=[nseen])
+
+
+def add_nseen_index(df, nseen):
+    df = df.set_axis([nseen * np.ones_like(df.index), df.index], inplace=False)
+    df = df.rename_axis(['nseen', 'i'])
+    return df
 
 
 def get_labels(data):

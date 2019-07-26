@@ -145,10 +145,12 @@ def simulation(
             save_interval = 0  # disable old-style saves
         if progress_interval is None:
             progress_interval = 1000
-            if progress_assignments_window is None:
-                progress_assignments_window = 10000
-            if progress_accuracy_window is None:
-                progress_accuracy_window = 10000
+
+    if progress_interval > 0:
+        if progress_assignments_window is None:
+            progress_assignments_window = 10000
+        if progress_accuracy_window is None:
+            progress_accuracy_window = 10000
 
     log.info('Brian2STDPMNIST/simulation.py')
     log.info('Arguments =============')
@@ -267,8 +269,7 @@ def simulation(
             postName = name + connType[1]
             connName = preName + postName
             conn = connections[connName] = DiehlAndCookSynapses(
-                neuron_groups[preName], neuron_groups[postName], conn_type=connType
-            )
+                neuron_groups[preName], neuron_groups[postName], conn_type=connType)
             conn.connect()  # all-to-all connection
             # "random" connections for AeAi is matrix with zero everywhere
             # except the diagonal, which contains 10.4
@@ -403,10 +404,12 @@ def simulation(
                 start = time.process_time()
                 labels = get_labels(data)
                 log.info("So far seen {} examples".format(metadata.nseen))
+                store.append(f"nseen", pd.Series(data=[metadata.nseen], index=[metadata.nprogress]))
+                metadata.nprogress += 1
                 log.debug("Requested assignments window: {}".format(progress_assignments_window))
                 log.debug("Requested accuracy window: {}".format(progress_accuracy_window))
                 progress_window = progress_assignments_window + progress_accuracy_window
-                if progress_window < metadata.nseen:
+                if progress_window > metadata.nseen:
                     log.debug("Fewer examples have been seen than required for the requested progress windows.")
                     log.debug("Discarding first 20% of available examples to avoid initial contamination.")
                     log.debug("Dividing remaining examples in proportion to requested windows.")
@@ -419,7 +422,7 @@ def simulation(
                 log.debug("Used accuracy window: {}".format(accuracy_window))
                 for name in population_names:
                     subpop_e = name + "e"
-                    csc = store.select(f"cumulative_spike_counts/{subpop_e}").values
+                    csc = store.select(f"cumulative_spike_counts/{subpop_e}")
                     spikecounts_past = spike_counts_from_cumulative(
                         csc,
                         n_data,
@@ -430,7 +433,8 @@ def simulation(
                         "Assignments based on {} spikes".format(len(spikecounts_past))
                     )
                     assignments = get_assignments(spikecounts_past, labels)
-                    store.put(f"assignments/{subpop_e}/n{metadata.nseen}", assignments)
+                    assignments = add_nseen_index(assignments, metadata.nseen)
+                    store.append(f"assignments/{subpop_e}", assignments)
                     spikecounts_present = spike_counts_from_cumulative(
                         csc, n_data, start=-accuracy_window
                     )
@@ -459,22 +463,33 @@ def simulation(
                         plot_accuracy(store.select(f"accuracy/{subpop_e}"), filename=fn)
                     spikerates = spikecounts_present.groupby('i')['count'].sum()
                     spikerates = spikerates.reindex(np.arange(n_e), fill_value=0)
+                    spikerates = add_nseen_index(spikerates, metadata.nseen)
+                    store.append(f"rates/{subpop_e}", spikerates)
                     fn = os.path.join(
                         config.output_path, "spikerates-{}.pdf".format(subpop_e)
                     )
                     plot_quantity(spikerates, filename=fn)
+                    # fn = os.path.join(
+                    #    config.output_path, "spikerates-summary-{}.pdf".format(subpop_e)
+                    # )
+                    # plot_rates_summary(store.select(f"rates/{subpop}"), filename=fn)
                 for conn in config.save_conns:
                     subpop = conn[-2:]
-                    assignments = store.select(f"assignments/{subpop}/n{metadata.nseen}")
-                    conn_df = connections_to_pandas(connections[conn])
-                    store.append(f"connections/{conn}/n{metadata.nseen}", conn_df)
-                    theta = theta_to_pandas(subpop, neuron_groups)
-                    store.append(f"theta/{subpop}/n{metadata.nseen}", theta)
+                    assignments = store.select(f"assignments/{subpop}", where="nseen == metadata.nseen")
+                    assignments = assignments.reset_index('nseen', drop=True)
+                    conn_df = connections_to_pandas(connections[conn], metadata.nseen)
+                    store.append(f"connections/{conn}", conn_df)
+                    theta = theta_to_pandas(subpop, neuron_groups, metadata.nseen)
+                    store.append(f"theta/{subpop}", theta)
                     fn = os.path.join(config.output_path, "weights.pdf")
                     plot_weights(
                         connections[conn], assignments, theta,
                         filename=fn, max_weight=None
                     )
+                    # fn = os.path.join(
+                    #    config.output_path, "theta-summary-{}.pdf".format(subpop_e)
+                    # )
+                    # plot_theta_summary(store.select(f"theta/{subpop}"), filename=fn)
                 log.debug(
                     "progress took {:.3f} seconds".format(time.process_time() - start)
                 )
