@@ -1,9 +1,15 @@
+import logging
+
+logging.captureWarnings(True)
+log = logging.getLogger("spiking-mnist")
+
 import brian2 as b2
 
 
 class DiehlAndCookSynapses(b2.Synapses):
     """Simple model of a synapse between two excitatory neurons with STDP"""
-    def __init__(self, pre_neuron_group, post_neuron_group, conn_type, stdp_on=False, stdp_rule="original"):
+    def __init__(self, pre_neuron_group, post_neuron_group, conn_type, stdp_on=False, stdp_rule="original",
+                 custom_namespace={}):
         self.pre_conn_type = conn_type[0]
         self.post_conn_type = conn_type[1]
         self.stdp_rule = stdp_rule
@@ -12,6 +18,8 @@ class DiehlAndCookSynapses(b2.Synapses):
         if stdp_on:
             self.create_stdp_namespace()
             self.create_stdp_equations()
+        self.namespace.update(custom_namespace)
+        log.debug(f"Synapse namespace: {self.namespace}")
         super().__init__(
             pre_neuron_group,
             post_neuron_group,

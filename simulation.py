@@ -30,6 +30,7 @@ import pickle
 import time
 import datetime
 from inspect import getargvalues, currentframe, getframeinfo
+import json
 
 from utilities import *
 
@@ -89,21 +90,26 @@ def save_theta(population_names, neuron_groups, iteration=None):
 
 def main(**kwargs):
     if kwargs['runname'] is None:
+        if kwargs['resume']:
+            print(f'Must provide runname to resume')
+            exit(2)
         kwargs['runname'] = datetime.datetime.now().replace(microsecond=0).isoformat()
     outputpath = os.path.join(kwargs['output'], kwargs['runname'])
     try:
-        os.makedirs(outputpath, exist_ok=kwargs['clobber'])
+        os.makedirs(outputpath, exist_ok=(kwargs['clobber'] or kwargs['resume']))
     except (OSError, FileExistsError):
         print(f'Refusing to overwrite existing output files in {outputpath}')
         print(f'Use --clobber to force overwriting')
+        exit(8)
     logfilename = os.path.join(outputpath, 'output.log')
-    fh = logging.FileHandler(logfilename, 'w')
+    mode = 'a' if kwargs['resume'] else 'w'
+    fh = logging.FileHandler(logfilename, mode)
     fh.setLevel(logging.DEBUG if kwargs['debug'] else logging.INFO)
     formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
     fh.setFormatter(formatter)
     log.addHandler(fh)
     storefilename = os.path.join(outputpath, 'store.h5')
-    with pd.HDFStore(storefilename, complib='blosc', complevel=9) as store:
+    with pd.HDFStore(storefilename, mode=mode, complib='blosc', complevel=9) as store:
         kwargs['store'] = store
         simulation(**kwargs)
 
@@ -112,37 +118,36 @@ def simulation(
         test_mode=True,
         runname=None,
         num_epochs=None,
-        record_spikes=False,
         progress_interval=None,
         progress_assignments_window=None,
         progress_accuracy_window=None,
-        save_interval=None,
-        profile=False,
+        record_spikes=False,
         permute_data=False,
-        stdp_rule="original",
         size=400,
+        resume=False,
+        stdp_rule="original",
+        custom_namespace={},
+        profile=False,
         store=None,
         **kwargs
 ):
     metadata = get_metadata(store)
-    metadata.nseen = 0
+    if not resume:
+        metadata.nseen = 0
+        metadata.nprogress = 0
 
     if test_mode:
         random_weights = False
         ee_STDP_on = False
         if num_epochs is None:
             num_epochs = 1
-        if save_interval is None:
-            save_interval = 0
         if progress_interval is None:
             progress_interval = 0
     else:
-        random_weights = True
+        random_weights = not resume
         ee_STDP_on = True
         if num_epochs is None:
             num_epochs = 3
-        if save_interval is None:
-            save_interval = 0  # disable old-style saves
         if progress_interval is None:
             progress_interval = 1000
 
@@ -171,12 +176,15 @@ def simulation(
     config.data_path = os.path.dirname(os.path.abspath(modulefilename))
     config.random_weight_path = os.path.join(config.data_path, "random/")
     runpath = os.path.join("runs", runname)
-    if test_mode:
-        config.weight_path = os.path.join(config.data_path, "weights/")
-    else:
-        config.weight_path = os.path.join(runpath, "weights/")
+    config.weight_path = os.path.join(runpath, "weights/")
     os.makedirs(config.weight_path, exist_ok=True)
-    log.info("Running {}".format(runname))
+    if test_mode:
+        log.info("Testing run {}".format(runname))
+    elif resume:
+        log.info("Resuming training run {}".format(runname))
+    else:
+        log.info("Training run {}".format(runname))
+
     config.output_path = os.path.join(runpath, "output/")
     os.makedirs(config.output_path, exist_ok=True)
 
@@ -332,6 +340,7 @@ def simulation(
                 conn_type=connType,
                 stdp_on=ee_STDP_on,
                 stdp_rule=stdp_rule,
+                custom_namespace=custom_namespace
             )
             conn.connect()  # all-to-all connection
             minDelay = delay[connType][0]
@@ -376,24 +385,6 @@ def simulation(
             metadata.nseen += 1
 
     network_operations.append(record_cumulative_spike_counts)
-
-    if save_interval > 0:
-
-        @b2.network_operation(dt=total_example_time * save_interval)
-        def save_status(t):
-            if t > 0:
-                log.debug("Starting save_status")
-                start = time.process_time()
-                tbin = int(t / total_example_time)
-                save_theta(population_names, neuron_groups, tbin)
-                save_connections(connections, tbin)
-                log.debug(
-                    "save_status took {:.3f} seconds".format(
-                        time.process_time() - start
-                    )
-                )
-
-        network_operations.append(save_status)
 
     if progress_interval > 0:
 
@@ -564,22 +555,29 @@ if __name__ == "__main__":
     mode_group.add_argument(
         "--train", dest="test_mode", action="store_false", help="Enable train mode"
     )
-    parser.add_argument("--runname", type=str, default=None)
+    parser.add_argument("--runname", type=str, default=None,
+                        help="Name of output folder, if none given defaults to date and time.")
     parser.add_argument("--output", type=str, default='./runs/',
-                        help="Path for output files")
+                        help="Parent path for output folder")
     debug_group = parser.add_mutually_exclusive_group(required=False)
     debug_group.add_argument("--debug", dest="debug", action="store_true",
                              default=argparse.SUPPRESS,  # default to debug=True
                              help="Include debug output from log file")
     debug_group.add_argument("--no-debug", dest="debug", action="store_false",
                              help="Omit debug output in log file")
-    parser.add_argument("--clobber", action="store_true")
-    parser.add_argument("--profile", action="store_true")
+    parser.add_argument("--clobber", action="store_true",
+                        help="Force overwrite of files in existing run folder")
     parser.add_argument("--num_epochs", type=float, default=None)
     parser.add_argument("--progress_interval", type=int, default=None)
-    parser.add_argument("--save_interval", type=int, default=None)
+    parser.add_argument("--assignments_window", type=int, default=None)
+    parser.add_argument("--accuracy_window", type=int, default=None)
     parser.add_argument("--record_spikes", action="store_true")
     parser.add_argument("--permute_data", action="store_true")
+    parser.add_argument("--size", type=int, default=400,
+                        help="Number of neurons in the computational layer")
+    parser.add_argument("--resume", action="store_true",
+                        help="Continue on from existing run.")
+
     parser.add_argument(
         "--stdp_rule",
         type=str,
@@ -593,9 +591,15 @@ if __name__ == "__main__":
             "symmetric",
         ],
     )
-    parser.add_argument("--size", type=int, default=400)
+    parser.add_argument("--custom_namespace", type=str, default='{}',
+                        help=("Customise the synapse namespace. "
+                              "This should be given as a dictionary, surrounded by quotes, "
+                              "for example: '{\"tar\": 0.1, \"mu\": 2.0}'."))
+    parser.add_argument("--profile", action="store_true")
 
     args = parser.parse_args()
+
+    custom_namespace = json.loads(args.custom_namespace.replace("'", '"'))
 
     sys.exit(
         main(
@@ -605,12 +609,15 @@ if __name__ == "__main__":
             debug=args.debug,
             clobber=args.clobber,
             num_epochs=args.num_epochs,
-            record_spikes=args.record_spikes,
             progress_interval=args.progress_interval,
-            save_interval=args.save_interval,
-            profile=args.profile,
+            progress_assignments_window=args.assignments_window,
+            progress_accuracy_window=args.accuracy_window,
+            record_spikes=args.record_spikes,
             permute_data=args.permute_data,
-            stdp_rule=args.stdp_rule,
             size=args.size,
+            resume=args.resume,
+            stdp_rule=args.stdp_rule,
+            custom_namespace=custom_namespace,
+            profile=args.profile,
         )
     )
