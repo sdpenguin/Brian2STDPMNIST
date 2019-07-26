@@ -1,3 +1,5 @@
+import matplotlib
+matplotlib.use('PDF')
 from matplotlib import pyplot as plt
 from matplotlib import animation, rc
 import numpy as np

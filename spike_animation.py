@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib
+matplotlib.use('PDF')
 from matplotlib import pyplot as plt
 from matplotlib import animation, rc
 import brian2 as b2

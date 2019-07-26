@@ -11,6 +11,8 @@ from scipy.special import betaincinv
 import brian2 as b2
 from urllib.request import urlretrieve
 
+import matplotlib
+matplotlib.use('PDF')
 from matplotlib import pyplot as plt
 from matplotlib import cm
 from mpl_toolkits import axes_grid1
