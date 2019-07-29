@@ -8,8 +8,16 @@ import brian2 as b2
 
 class DiehlAndCookSynapses(b2.Synapses):
     """Simple model of a synapse between two excitatory neurons with STDP"""
-    def __init__(self, pre_neuron_group, post_neuron_group, conn_type, stdp_on=False, stdp_rule="original",
-                 custom_namespace={}):
+
+    def __init__(
+        self,
+        pre_neuron_group,
+        post_neuron_group,
+        conn_type,
+        stdp_on=False,
+        stdp_rule="original",
+        custom_namespace={},
+    ):
         self.pre_conn_type = conn_type[0]
         self.post_conn_type = conn_type[1]
         self.stdp_rule = stdp_rule
@@ -35,7 +43,7 @@ class DiehlAndCookSynapses(b2.Synapses):
         self.post_eqn = ""
 
     def create_stdp_namespace(self):
-        if self.stdp_rule == 'original':
+        if self.stdp_rule == "original":
             self.namespace = {
                 "tc_pre_ee": 20 * b2.ms,
                 "tc_post_1_ee": 20 * b2.ms,
@@ -44,7 +52,7 @@ class DiehlAndCookSynapses(b2.Synapses):
                 "nu_ee_post": 0.01,
                 "wmax_ee": 1.0,
             }
-        elif self.stdp_rule == 'minimal-triplet':
+        elif self.stdp_rule == "minimal-triplet":
             # use values corresponding to DC15 model
             # which approximate those from PG06
             self.namespace = {
@@ -55,7 +63,7 @@ class DiehlAndCookSynapses(b2.Synapses):
                 "nu_triple_post": 0.01,
                 "wmax": 1.0,
             }
-        elif self.stdp_rule == 'full-triplet':
+        elif self.stdp_rule == "full-triplet":
             # these values taken from nearest-spike, visual-cortex model of PG06
             self.namespace = {
                 "tc_pre1": 16.8 * b2.ms,
@@ -68,7 +76,7 @@ class DiehlAndCookSynapses(b2.Synapses):
                 "nu_triple_post": 5.3e-2,
                 "wmax": 1.0,
             }
-        elif self.stdp_rule == 'powerlaw':
+        elif self.stdp_rule == "powerlaw":
             self.namespace = {
                 "tc_pre": 20 * b2.ms,
                 "nu": 0.01,
@@ -76,7 +84,7 @@ class DiehlAndCookSynapses(b2.Synapses):
                 "tar": 0.5,  # complete guess!
                 "mu": 3.0,  # complete guess!
             }
-        elif self.stdp_rule == 'exponential':
+        elif self.stdp_rule == "exponential":
             self.namespace = {
                 "tc_pre": 20 * b2.ms,
                 "nu": 0.01,
@@ -84,7 +92,7 @@ class DiehlAndCookSynapses(b2.Synapses):
                 "tar": 0.5,  # complete guess!
                 "beta": 3.0,  # from Querlioz et al. (2013, doi:10.1109/TNANO.2013.2250995)
             }
-        elif self.stdp_rule == 'symmetric':
+        elif self.stdp_rule == "symmetric":
             self.namespace = {
                 "tc_pre": 20 * b2.ms,
                 "tc_post": 20 * b2.ms,
@@ -96,7 +104,7 @@ class DiehlAndCookSynapses(b2.Synapses):
             }
 
     def create_stdp_equations(self):
-        if self.stdp_rule == 'original':
+        if self.stdp_rule == "original":
             # original code from Diehl & Cooke (2015) repository
             # An implementation of the nearest-spike minimal triplet
             # model of Pfister & Gerstner (2006)
@@ -122,7 +130,7 @@ class DiehlAndCookSynapses(b2.Synapses):
                 post1 = 1.
                 post2 = 1.
                 """
-        elif self.stdp_rule == 'minimal-triplet':
+        elif self.stdp_rule == "minimal-triplet":
             # Minimal (visual cortex) model of Pfister & Gerstner (2006)
             # Mapping of notation to PG06 and DC15:
             # pre = r_1 = pre
@@ -149,7 +157,7 @@ class DiehlAndCookSynapses(b2.Synapses):
                 post1 = 1.0
                 post2 = 1.0
                 """
-        elif self.stdp_rule == 'full-triplet':
+        elif self.stdp_rule == "full-triplet":
             # Full model of Pfister & Gerstner (2006)
             # Mapping of notation to PG06 and DC15:
             # pre1 = r_1 = pre
@@ -182,7 +190,7 @@ class DiehlAndCookSynapses(b2.Synapses):
                 post1 = 1.0
                 post2 = 1.0
                 """
-        if self.stdp_rule == 'powerlaw':
+        if self.stdp_rule == "powerlaw":
             # inferred code from Diehl & Cooke (2015)
             self.model += b2.Equations(
                 """
@@ -195,7 +203,7 @@ class DiehlAndCookSynapses(b2.Synapses):
             self.post_eqn += """
                 w = clip(w + nu * (pre - tar) * (wmax - w)**mu, 0, wmax)
                 """
-        if self.stdp_rule == 'exponential':
+        if self.stdp_rule == "exponential":
             # inferred code from Diehl & Cooke (2015)
             self.model += b2.Equations(
                 """
@@ -208,7 +216,7 @@ class DiehlAndCookSynapses(b2.Synapses):
             self.post_eqn += """
                 w = clip(w + nu * (pre * exp(-beta * w) - tar * exp(-beta * (wmax - w))), 0, wmax)
                 """
-        if self.stdp_rule == 'symmetric':
+        if self.stdp_rule == "symmetric":
             # inferred code from Diehl & Cooke (2015)
             self.model += b2.Equations(
                 """
@@ -225,9 +233,8 @@ class DiehlAndCookSynapses(b2.Synapses):
                  w = clip(w + nu_post * (pre - tar) * (wmax - w)**mu, 0, wmax)
                  post = post + 1.0
                  """
-        if self.stdp_rule == 'clopath2010':
+        if self.stdp_rule == "clopath2010":
             # not in DC15, but would be nice to try this sometime:
             # spike-timing dependent plasticity perhaps more bio-physically
             # mediated by the post-synaptic membrane voltage
             pass
-

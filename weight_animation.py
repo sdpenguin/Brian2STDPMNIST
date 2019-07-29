@@ -1,5 +1,6 @@
 import matplotlib
-matplotlib.use('PDF')
+
+matplotlib.use("PDF")
 from matplotlib import pyplot as plt
 from matplotlib import animation, rc
 import numpy as np
@@ -17,9 +18,13 @@ def weight_animation(store_filename, conn, gif_filename="weights_example", sampl
         if sample is not None:
             nseen = nseen.iloc[::sample]
         firstseen = nseen.iloc[0]
-        weights0 = store.select(f"connections/{conn}", where="nseen == firstseen").reset_index('nseen', drop=True)
+        weights0 = store.select(
+            f"connections/{conn}", where="nseen == firstseen"
+        ).reset_index("nseen", drop=True)
         weights0 = sparse.coo_matrix((weights0.w, (weights0.i, weights0.j))).todense()
-        assignments0 = store.select(f"assignments/{conn[-2:]}", where="nseen == firstseen").reset_index('nseen', drop=True)
+        assignments0 = store.select(
+            f"assignments/{conn[-2:]}", where="nseen == firstseen"
+        ).reset_index("nseen", drop=True)
         theta0 = store.select(f"theta/{conn[-2:]}", where="nseen == firstseen")
         fig, ax, img, assignments_text, theta_text = plot_weights(
             weights0,
@@ -40,13 +45,17 @@ def weight_animation(store_filename, conn, gif_filename="weights_example", sampl
             return [title, img]
 
         def update_image(t):
-            weights = store.select(f"connections/{conn}", where="nseen == t").reset_index('nseen', drop=True)
+            weights = store.select(
+                f"connections/{conn}", where="nseen == t"
+            ).reset_index("nseen", drop=True)
             weights = sparse.coo_matrix((weights.w, (weights.i, weights.j))).todense()
             rearranged_weights = rearrange_weights(weights)
             arr = img.get_array()
             arr[:] = rearranged_weights
             title.set_text(f"examples seen: {t}")
-            assignments = store.select(f"assignments/{conn[-2:]}", where="nseen == t").reset_index('nseen', drop=True)
+            assignments = store.select(
+                f"assignments/{conn[-2:]}", where="nseen == t"
+            ).reset_index("nseen", drop=True)
             ass = np.zeros(n, np.int) - 1
             ass[assignments.index] = assignments["label"]
             ass = ass.astype(np.str)
@@ -70,7 +79,7 @@ def weight_animation(store_filename, conn, gif_filename="weights_example", sampl
         plt.close()
         if gif_filename is not None:
             anim.save(
-                "{}.gif".format(rreplace(gif_filename, '.gif', '')),
+                "{}.gif".format(rreplace(gif_filename, ".gif", "")),
                 writer="imagemagick",
                 fps=1000 * len(nseen) / duration,
             )

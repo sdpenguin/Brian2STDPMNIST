@@ -61,9 +61,7 @@ def save_connections(connections, iteration=None):
     for connName in config.save_conns:
         log.info("Saving connections {}".format(connName))
         conn = connections[connName]
-        filename = os.path.join(
-            config.weight_path, "{}".format(connName)
-        )
+        filename = os.path.join(config.weight_path, "{}".format(connName))
         if iteration is not None:
             filename += "-{:06d}".format(iteration)
         connections_to_file(conn, filename)
@@ -71,65 +69,61 @@ def save_connections(connections, iteration=None):
 
 def load_theta(population_name):
     log.info("Loading theta for population {}".format(population_name))
-    filename = os.path.join(
-        config.weight_path, "theta_{}.npy".format(population_name)
-    )
+    filename = os.path.join(config.weight_path, "theta_{}.npy".format(population_name))
     return np.load(filename) * b2.volt
 
 
 def save_theta(population_names, neuron_groups, iteration=None):
     log.info("Saving theta")
     for pop_name in population_names:
-        filename = os.path.join(
-            config.weight_path, "theta_{}".format(pop_name)
-        )
+        filename = os.path.join(config.weight_path, "theta_{}".format(pop_name))
         if iteration is not None:
             filename += "-{:06d}".format(iteration)
         np.save(filename, neuron_groups[pop_name + "e"].theta)
 
 
 def main(**kwargs):
-    if kwargs['runname'] is None:
-        if kwargs['resume']:
-            print(f'Must provide runname to resume')
+    if kwargs["runname"] is None:
+        if kwargs["resume"]:
+            print(f"Must provide runname to resume")
             exit(2)
-        kwargs['runname'] = datetime.datetime.now().replace(microsecond=0).isoformat()
-    outputpath = os.path.join(kwargs['output'], kwargs['runname'])
+        kwargs["runname"] = datetime.datetime.now().replace(microsecond=0).isoformat()
+    outputpath = os.path.join(kwargs["output"], kwargs["runname"])
     try:
-        os.makedirs(outputpath, exist_ok=(kwargs['clobber'] or kwargs['resume']))
+        os.makedirs(outputpath, exist_ok=(kwargs["clobber"] or kwargs["resume"]))
     except (OSError, FileExistsError):
-        print(f'Refusing to overwrite existing output files in {outputpath}')
-        print(f'Use --clobber to force overwriting')
+        print(f"Refusing to overwrite existing output files in {outputpath}")
+        print(f"Use --clobber to force overwriting")
         exit(8)
-    logfilename = os.path.join(outputpath, 'output.log')
-    mode = 'a' if kwargs['resume'] else 'w'
+    logfilename = os.path.join(outputpath, "output.log")
+    mode = "a" if kwargs["resume"] else "w"
     fh = logging.FileHandler(logfilename, mode)
-    fh.setLevel(logging.DEBUG if kwargs['debug'] else logging.INFO)
+    fh.setLevel(logging.DEBUG if kwargs["debug"] else logging.INFO)
     formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
     fh.setFormatter(formatter)
     log.addHandler(fh)
-    storefilename = os.path.join(outputpath, 'store.h5')
-    with pd.HDFStore(storefilename, mode=mode, complib='blosc', complevel=9) as store:
-        kwargs['store'] = store
+    storefilename = os.path.join(outputpath, "store.h5")
+    with pd.HDFStore(storefilename, mode=mode, complib="blosc", complevel=9) as store:
+        kwargs["store"] = store
         simulation(**kwargs)
 
 
 def simulation(
-        test_mode=True,
-        runname=None,
-        num_epochs=None,
-        progress_interval=None,
-        progress_assignments_window=None,
-        progress_accuracy_window=None,
-        record_spikes=False,
-        permute_data=False,
-        size=400,
-        resume=False,
-        stdp_rule="original",
-        custom_namespace={},
-        profile=False,
-        store=None,
-        **kwargs
+    test_mode=True,
+    runname=None,
+    num_epochs=None,
+    progress_interval=None,
+    progress_assignments_window=None,
+    progress_accuracy_window=None,
+    record_spikes=False,
+    permute_data=False,
+    size=400,
+    resume=False,
+    stdp_rule="original",
+    custom_namespace={},
+    profile=False,
+    store=None,
+    **kwargs,
 ):
     metadata = get_metadata(store)
     if not resume:
@@ -157,14 +151,14 @@ def simulation(
         if progress_accuracy_window is None:
             progress_accuracy_window = 10000
 
-    log.info('Brian2STDPMNIST/simulation.py')
-    log.info('Arguments =============')
+    log.info("Brian2STDPMNIST/simulation.py")
+    log.info("Arguments =============")
     args, _, _, values = getargvalues(currentframe())
-    args.remove('store')
+    args.remove("store")
     for a in args:
-        log.info(f'{a}: {locals()[a]}')
-        metadata['args'] = args
-    log.info('=======================')
+        log.info(f"{a}: {locals()[a]}")
+        metadata["args"] = args
+    log.info("=======================")
 
     # load MNIST
     training, testing = get_labeled_data()
@@ -239,7 +233,7 @@ def simulation(
     input_intensity = 2.0
 
     initial_weight_matrices = get_initial_weights(n_input, n_e)
-    use_premade_weights = (n_e == 400)
+    use_premade_weights = n_e == 400
 
     n_pop = len(population_names)
 
@@ -263,11 +257,11 @@ def simulation(
         subpop_e = name + "e"
         subpop_i = name + "i"
         nge = neuron_groups[subpop_e] = neuron_groups["e"][
-                                        subgroup_n * n_e: (subgroup_n + 1) * n_e
-                                        ]
+            subgroup_n * n_e : (subgroup_n + 1) * n_e
+        ]
         ngi = neuron_groups[subpop_i] = neuron_groups["i"][
-                                        subgroup_n * n_i: (subgroup_n + 1) * n_i
-                                        ]
+            subgroup_n * n_i : (subgroup_n + 1) * n_i
+        ]
 
         if not random_weights:
             neuron_groups[subpop_e].theta = load_theta(name)
@@ -278,7 +272,8 @@ def simulation(
             postName = name + connType[1]
             connName = preName + postName
             conn = connections[connName] = DiehlAndCookSynapses(
-                neuron_groups[preName], neuron_groups[postName], conn_type=connType)
+                neuron_groups[preName], neuron_groups[postName], conn_type=connType
+            )
             conn.connect()  # all-to-all connection
             # "random" connections for AeAi is matrix with zero everywhere
             # except the diagonal, which contains 10.4
@@ -287,7 +282,7 @@ def simulation(
             if use_premade_weights:
                 weightMatrix = load_connections(connName, random=True)
             else:
-                log.info('Using generated initial weight matrices')
+                log.info("Using generated initial weight matrices")
                 weightMatrix = initial_weight_matrices[connName]
             conn.w = weightMatrix.flatten()
 
@@ -308,7 +303,7 @@ def simulation(
         spike_rates = data["x"][j].reshape(n_input) / 8
         spike_rates *= input_intensity
         start = j * n_dt_total
-        input_rates[start: start + n_dt_example] = spike_rates
+        input_rates[start : start + n_dt_example] = spike_rates
     input_rates = input_rates * b2.Hz
     stimulus = b2.TimedArray(input_rates, dt=input_dt)
     total_data_time = n_data * n_dt_total * input_dt
@@ -341,7 +336,7 @@ def simulation(
                 conn_type=connType,
                 stdp_on=ee_STDP_on,
                 stdp_rule=stdp_rule,
-                custom_namespace=custom_namespace
+                custom_namespace=custom_namespace,
             )
             conn.connect()  # all-to-all connection
             minDelay = delay[connType][0]
@@ -351,7 +346,7 @@ def simulation(
             if use_premade_weights:
                 weightMatrix = load_connections(connName, random=random_weights)
             else:
-                log.info('Using generated initial weight matrices')
+                log.info("Using generated initial weight matrices")
                 weightMatrix = initial_weight_matrices[connName]
             conn.w = weightMatrix.flatten()
 
@@ -396,17 +391,42 @@ def simulation(
                 start = time.process_time()
                 labels = get_labels(data)
                 log.info("So far seen {} examples".format(metadata.nseen))
-                store.append(f"nseen", pd.Series(data=[metadata.nseen], index=[metadata.nprogress]))
+                store.append(
+                    f"nseen",
+                    pd.Series(data=[metadata.nseen], index=[metadata.nprogress]),
+                )
                 metadata.nprogress += 1
-                log.debug("Requested assignments window: {}".format(progress_assignments_window))
-                log.debug("Requested accuracy window: {}".format(progress_accuracy_window))
+                log.debug(
+                    "Requested assignments window: {}".format(
+                        progress_assignments_window
+                    )
+                )
+                log.debug(
+                    "Requested accuracy window: {}".format(progress_accuracy_window)
+                )
                 progress_window = progress_assignments_window + progress_accuracy_window
                 if progress_window > metadata.nseen:
-                    log.debug("Fewer examples have been seen than required for the requested progress windows.")
-                    log.debug("Discarding first 20% of available examples to avoid initial contamination.")
-                    log.debug("Dividing remaining examples in proportion to requested windows.")
-                    assignments_window = int(0.8 * metadata.nseen * progress_assignments_window / progress_window)
-                    accuracy_window = int(0.8 * metadata.nseen * progress_accuracy_window / progress_window)
+                    log.debug(
+                        "Fewer examples have been seen than required for the requested progress windows."
+                    )
+                    log.debug(
+                        "Discarding first 20% of available examples to avoid initial contamination."
+                    )
+                    log.debug(
+                        "Dividing remaining examples in proportion to requested windows."
+                    )
+                    assignments_window = int(
+                        0.8
+                        * metadata.nseen
+                        * progress_assignments_window
+                        / progress_window
+                    )
+                    accuracy_window = int(
+                        0.8
+                        * metadata.nseen
+                        * progress_accuracy_window
+                        / progress_window
+                    )
                 else:
                     assignments_window = progress_assignments_window
                     accuracy_window = progress_accuracy_window
@@ -416,10 +436,7 @@ def simulation(
                     subpop_e = name + "e"
                     csc = store.select(f"cumulative_spike_counts/{subpop_e}")
                     spikecounts_past = spike_counts_from_cumulative(
-                        csc,
-                        n_data,
-                        end=-accuracy_window,
-                        atmost=assignments_window,
+                        csc, n_data, end=-accuracy_window, atmost=assignments_window
                     )
                     log.debug(
                         "Assignments based on {} spikes".format(len(spikecounts_past))
@@ -453,37 +470,53 @@ def simulation(
                             config.output_path, "accuracy-{}.pdf".format(subpop_e)
                         )
                         plot_accuracy(store.select(f"accuracy/{subpop_e}"), filename=fn)
-                    spikerates = spikecounts_present.groupby('i')['count'].sum()
+                    spikerates = spikecounts_present.groupby("i")["count"].sum()
                     spikerates = spikerates.reindex(np.arange(n_e), fill_value=0)
                     spikerates = add_nseen_index(spikerates, metadata.nseen)
                     store.append(f"rates/{subpop_e}", spikerates)
                     fn = os.path.join(
                         config.output_path, "spikerates-{}.pdf".format(subpop_e)
                     )
-                    plot_quantity(spikerates, filename=fn, label="spike rate", nseen=metadata.nseen)
+                    plot_quantity(
+                        spikerates,
+                        filename=fn,
+                        label="spike rate",
+                        nseen=metadata.nseen,
+                    )
                     fn = os.path.join(
-                       config.output_path, "spikerates-summary-{}.pdf".format(subpop_e)
+                        config.output_path, "spikerates-summary-{}.pdf".format(subpop_e)
                     )
                     plot_rates_summary(store.select(f"rates/{subpop_e}"), filename=fn)
                 for conn in config.save_conns:
                     subpop = conn[-2:]
-                    assignments = store.select(f"assignments/{subpop}", where="nseen == metadata.nseen")
-                    assignments = assignments.reset_index('nseen', drop=True)
+                    assignments = store.select(
+                        f"assignments/{subpop}", where="nseen == metadata.nseen"
+                    )
+                    assignments = assignments.reset_index("nseen", drop=True)
                     conn_df = connections_to_pandas(connections[conn], metadata.nseen)
                     store.append(f"connections/{conn}", conn_df)
                     theta = theta_to_pandas(subpop, neuron_groups, metadata.nseen)
                     store.append(f"theta/{subpop}", theta)
                     fn = os.path.join(config.output_path, "weights.pdf")
                     plot_weights(
-                        connections[conn], assignments, theta,
-                        filename=fn, max_weight=None, nseen=metadata.nseen
+                        connections[conn],
+                        assignments,
+                        theta,
+                        filename=fn,
+                        max_weight=None,
+                        nseen=metadata.nseen,
                     )
                     fn = os.path.join(
                         config.output_path, "theta-{}.pdf".format(subpop_e)
                     )
-                    plot_quantity(theta / b2.mV, filename=fn, label="theta (mV)", nseen=metadata.nseen)
+                    plot_quantity(
+                        theta / b2.mV,
+                        filename=fn,
+                        label="theta (mV)",
+                        nseen=metadata.nseen,
+                    )
                     fn = os.path.join(
-                       config.output_path, "theta-summary-{}.pdf".format(subpop_e)
+                        config.output_path, "theta-summary-{}.pdf".format(subpop_e)
                     )
                     plot_theta_summary(store.select(f"theta/{subpop}"), filename=fn)
                 log.debug(
@@ -560,28 +593,49 @@ if __name__ == "__main__":
     mode_group.add_argument(
         "--train", dest="test_mode", action="store_false", help="Enable train mode"
     )
-    parser.add_argument("--runname", type=str, default=None,
-                        help="Name of output folder, if none given defaults to date and time.")
-    parser.add_argument("--output", type=str, default='./runs/',
-                        help="Parent path for output folder")
+    parser.add_argument(
+        "--runname",
+        type=str,
+        default=None,
+        help="Name of output folder, if none given defaults to date and time.",
+    )
+    parser.add_argument(
+        "--output", type=str, default="./runs/", help="Parent path for output folder"
+    )
     debug_group = parser.add_mutually_exclusive_group(required=False)
-    debug_group.add_argument("--debug", dest="debug", action="store_true",
-                             default=argparse.SUPPRESS,  # default to debug=True
-                             help="Include debug output from log file")
-    debug_group.add_argument("--no-debug", dest="debug", action="store_false",
-                             help="Omit debug output in log file")
-    parser.add_argument("--clobber", action="store_true",
-                        help="Force overwrite of files in existing run folder")
+    debug_group.add_argument(
+        "--debug",
+        dest="debug",
+        action="store_true",
+        default=argparse.SUPPRESS,  # default to debug=True
+        help="Include debug output from log file",
+    )
+    debug_group.add_argument(
+        "--no-debug",
+        dest="debug",
+        action="store_false",
+        help="Omit debug output in log file",
+    )
+    parser.add_argument(
+        "--clobber",
+        action="store_true",
+        help="Force overwrite of files in existing run folder",
+    )
     parser.add_argument("--num_epochs", type=float, default=None)
     parser.add_argument("--progress_interval", type=int, default=None)
     parser.add_argument("--assignments_window", type=int, default=None)
     parser.add_argument("--accuracy_window", type=int, default=None)
     parser.add_argument("--record_spikes", action="store_true")
     parser.add_argument("--permute_data", action="store_true")
-    parser.add_argument("--size", type=int, default=400,
-                        help="Number of neurons in the computational layer")
-    parser.add_argument("--resume", action="store_true",
-                        help="Continue on from existing run.")
+    parser.add_argument(
+        "--size",
+        type=int,
+        default=400,
+        help="Number of neurons in the computational layer",
+    )
+    parser.add_argument(
+        "--resume", action="store_true", help="Continue on from existing run."
+    )
 
     parser.add_argument(
         "--stdp_rule",
@@ -596,10 +650,16 @@ if __name__ == "__main__":
             "symmetric",
         ],
     )
-    parser.add_argument("--custom_namespace", type=str, default='{}',
-                        help=("Customise the synapse namespace. "
-                              "This should be given as a dictionary, surrounded by quotes, "
-                              "for example: '{\"tar\": 0.1, \"mu\": 2.0}'."))
+    parser.add_argument(
+        "--custom_namespace",
+        type=str,
+        default="{}",
+        help=(
+            "Customise the synapse namespace. "
+            "This should be given as a dictionary, surrounded by quotes, "
+            'for example: \'{"tar": 0.1, "mu": 2.0}\'.'
+        ),
+    )
     parser.add_argument("--profile", action="store_true")
 
     args = parser.parse_args()

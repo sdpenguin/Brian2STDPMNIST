@@ -12,7 +12,8 @@ import brian2 as b2
 from urllib.request import urlretrieve
 
 import matplotlib
-matplotlib.use('PDF')
+
+matplotlib.use("PDF")
 from matplotlib import pyplot as plt
 from matplotlib import cm
 from mpl_toolkits import axes_grid1
@@ -55,9 +56,9 @@ def connections_to_file(conn, filename):
 
 
 def connections_to_pandas(conn, nseen):
-    df = pd.DataFrame({'i': conn.i[:], 'j': conn.j[:], 'w': conn.w[:]})
-    df['nseen'] = nseen
-    df = df.set_index('nseen', append=True)
+    df = pd.DataFrame({"i": conn.i[:], "j": conn.j[:], "w": conn.w[:]})
+    df["nseen"] = nseen
+    df = df.set_index("nseen", append=True)
     return df
 
 
@@ -70,14 +71,14 @@ def theta_to_pandas(subpop, neuron_groups, nseen):
 def get_initial_weights(n_input, n_e):
     matrices = {}
     npr = np.random.RandomState(9728364)
-    matrices['AeAi'] = np.eye(n_e) * 10.4
-    matrices['AiAe'] = 17.0 * (1 - np.eye(n_e))
-    matrices['XeAe'] = npr.uniform(0.003, 0.303, (n_input, n_e))
+    matrices["AeAi"] = np.eye(n_e) * 10.4
+    matrices["AiAe"] = 17.0 * (1 - np.eye(n_e))
+    matrices["XeAe"] = npr.uniform(0.003, 0.303, (n_input, n_e))
     new = np.zeros((n_input, n_e))
     n_connect = int(0.1 * n_input * n_e)
     connect = npr.choice(n_input * n_e, n_connect, replace=False)
     new.flat[connect] = npr.uniform(0.0, 0.2, n_connect)
-    matrices['XeAi'] = new
+    matrices["XeAi"] = new
     return matrices
 
 
@@ -94,14 +95,21 @@ def rearrange_weights(weights):
         for j in range(n_e_sqrt):
             wk = weights[:, i + j * n_e_sqrt].reshape((n_in_sqrt, n_in_sqrt))
             rearranged_weights[
-            i * n_in_sqrt: (i + 1) * n_in_sqrt, j * n_in_sqrt: (j + 1) * n_in_sqrt
+                i * n_in_sqrt : (i + 1) * n_in_sqrt, j * n_in_sqrt : (j + 1) * n_in_sqrt
             ] = wk
     return rearranged_weights
 
 
-def plot_weights(weights, assignments=None, theta=None,
-                 max_weight=1.0, ax=None, filename=None,
-                 return_artists=False, nseen=None):
+def plot_weights(
+    weights,
+    assignments=None,
+    theta=None,
+    max_weight=1.0,
+    ax=None,
+    filename=None,
+    return_artists=False,
+    nseen=None,
+):
     if isinstance(weights, b2.Synapses):
         weights = sparse.coo_matrix((weights.w, (weights.i, weights.j))).todense()
     rearranged_weights = rearrange_weights(weights)
@@ -123,7 +131,7 @@ def plot_weights(weights, assignments=None, theta=None,
     if nseen is not None:
         ax.set_title(f"examples seen: {nseen: 6d}", loc="right")
     cbar = add_colorbar(im)
-    cbar.set_label('weight')
+    cbar.set_label("weight")
     theta_text = []
     assignments_text = []
     if assignments is not None or theta is not None:
@@ -144,7 +152,7 @@ def plot_weights(weights, assignments=None, theta=None,
                         a[i, j],
                         horizontalalignment="right",
                         verticalalignment="bottom",
-                        fontsize='x-small',
+                        fontsize="x-small",
                     )
                     txt.set_path_effects(
                         [path_effects.withStroke(linewidth=1, foreground="w")]
@@ -160,7 +168,7 @@ def plot_weights(weights, assignments=None, theta=None,
                         f"{t[i, j]:4.2f}",
                         horizontalalignment="right",
                         verticalalignment="top",
-                        fontsize='x-small',
+                        fontsize="x-small",
                     )
                     txt.set_path_effects(
                         [path_effects.withStroke(linewidth=1, foreground="w")]
@@ -173,7 +181,9 @@ def plot_weights(weights, assignments=None, theta=None,
         return fig
 
 
-def plot_quantity(quantity=None, max_quantity=None, ax=None, filename=None, label='', nseen=None):
+def plot_quantity(
+    quantity=None, max_quantity=None, ax=None, filename=None, label="", nseen=None
+):
     if isinstance(quantity, pd.Series):
         quantity = quantity.values
     n_sqrt = int(np.sqrt(quantity.size))
@@ -182,11 +192,7 @@ def plot_quantity(quantity=None, max_quantity=None, ax=None, filename=None, labe
     if max_quantity is None:
         max_quantity = quantity.max()
     im = ax.imshow(
-        quantity,
-        interpolation="nearest",
-        vmin=0,
-        vmax=max_quantity,
-        cmap=cm.hot,
+        quantity, interpolation="nearest", vmin=0, vmax=max_quantity, cmap=cm.hot
     )
     ax.xaxis.set_ticks([])
     ax.yaxis.set_ticks([])
@@ -214,7 +220,7 @@ def plot_accuracy(acchist, ax=None, filename=None):
 
 def plot_theta_summary(thetahist, ax=None, filename=None):
     fig, ax, closefig = openfig(ax)
-    thetahist = thetahist.groupby('nseen')
+    thetahist = thetahist.groupby("nseen")
     tlow = thetahist.quantile(0.025)
     tmid = thetahist.quantile(0.5)
     thigh = thetahist.quantile(0.975)
@@ -229,7 +235,7 @@ def plot_theta_summary(thetahist, ax=None, filename=None):
 
 def plot_rates_summary(ratehist, ax=None, filename=None):
     fig, ax, closefig = openfig(ax)
-    ratehist = ratehist.groupby('nseen')
+    ratehist = ratehist.groupby("nseen")
     tlow = ratehist.quantile(0.025)
     tmid = ratehist.quantile(0.5)
     thigh = ratehist.quantile(0.975)
@@ -268,7 +274,7 @@ def rreplace(s, old, new, occurrence=1):
 
 
 def spike_counts_from_cumulative(
-        cumulative_spike_counts, n_data, start=0, end=None, atmost=None
+    cumulative_spike_counts, n_data, start=0, end=None, atmost=None
 ):
     if isinstance(cumulative_spike_counts, pd.DataFrame):
         cumulative_spike_counts = cumulative_spike_counts.values
@@ -299,7 +305,7 @@ def spike_counts_from_cumulative(
 
 
 def get_assignments(counts, labels):
-    counts = counts.reset_index('i').set_index('example_idx')
+    counts = counts.reset_index("i").set_index("example_idx")
     counts = labels.join(counts, how="right")
     counts = counts.reset_index("example_idx", drop=True)
     counts = counts.groupby(["i", "label"]).sum().reset_index("label")
@@ -328,13 +334,12 @@ def get_accuracy(predictions, nseen):
         return None
     mid = 100 * k / n
     lower, upper = 100 * binom_conf_interval(k, n, conf=0.95)
-    return pd.DataFrame({'mid': mid, 'lower': lower, 'upper': upper},
-                        index=[nseen])
+    return pd.DataFrame({"mid": mid, "lower": lower, "upper": upper}, index=[nseen])
 
 
 def add_nseen_index(df, nseen):
     df = df.set_axis([nseen * np.ones_like(df.index), df.index], inplace=False)
-    df = df.rename_axis(['nseen', 'i'])
+    df = df.rename_axis(["nseen", "i"])
     return df
 
 
