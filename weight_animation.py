@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 
-from utilities import plot_weights, rearrange_weights
+from utilities import plot_weights, rearrange_weights, rreplace
 
 rc("animation", html="html5")
 

@@ -16,7 +16,7 @@ class DiehlAndCookSynapses(b2.Synapses):
         conn_type,
         stdp_on=False,
         stdp_rule="original",
-        custom_namespace={},
+        custom_namespace=None,
     ):
         self.pre_conn_type = conn_type[0]
         self.post_conn_type = conn_type[1]
@@ -26,7 +26,8 @@ class DiehlAndCookSynapses(b2.Synapses):
         if stdp_on:
             self.create_stdp_namespace()
             self.create_stdp_equations()
-        self.namespace.update(custom_namespace)
+        if custom_namespace is not None:
+            self.namespace.update(custom_namespace)
         log.debug(f"Synapse namespace: {self.namespace}")
         super().__init__(
             pre_neuron_group,
@@ -234,6 +235,7 @@ class DiehlAndCookSynapses(b2.Synapses):
                  post = post + 1.0
                  """
         if self.stdp_rule == "clopath2010":
+            # TODO: try Clopath et al. 2010 rule
             # not in DC15, but would be nice to try this sometime:
             # spike-timing dependent plasticity perhaps more bio-physically
             # mediated by the post-synaptic membrane voltage
