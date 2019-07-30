@@ -56,14 +56,20 @@ def connections_to_file(conn, filename):
 
 
 def connections_to_pandas(conn, nseen):
-    df = pd.DataFrame({"i": conn.i[:], "j": conn.j[:], "w": conn.w[:]})
+    df = pd.DataFrame(
+        {
+            "i": conn.i[:].astype(np.int32),
+            "j": conn.j[:].astype(np.int32),
+            "w": conn.w[:].astype(np.float32),
+        }
+    )
     df["nseen"] = nseen
     df = df.set_index("nseen", append=True)
     return df
 
 
 def theta_to_pandas(subpop, neuron_groups, nseen):
-    t = pd.Series(neuron_groups[subpop].theta[:])
+    t = pd.Series(neuron_groups[subpop].theta[:] / b2.mV, dtype=np.float32)
     t = add_nseen_index(t, nseen)
     return t
 
@@ -99,7 +105,7 @@ def plot_weights(
     if isinstance(weights, b2.Synapses):
         weights = sparse.coo_matrix((weights.w, (weights.i, weights.j))).todense()
     rearranged_weights = rearrange_weights(weights)
-    fig, ax, closefig = openfig(ax, figsize=(10, 10))
+    fig, ax, closefig = openfig(ax, figsize=(10, 9))
     if max_weight is None:
         max_weight = rearranged_weights.max()
         if max_weight > 0.1:
@@ -173,25 +179,36 @@ def plot_quantity(
     if isinstance(quantity, pd.Series):
         quantity = quantity.values
     n_sqrt = int(np.sqrt(quantity.size))
-    quantity = quantity.reshape((n_sqrt, n_sqrt))
-    fig, ax, closefig = openfig(ax, figsize=(10, 10))
+    if n_sqrt ** 2 == quantity.size:
+        quantity = quantity.reshape((n_sqrt, n_sqrt))
+        figsize = (10, 9)
+        oned = False
+    else:
+        quantity = quantity.reshape((1, quantity.size))
+        figsize = (10, 3)
+        oned = True
+    fig, ax, closefig = openfig(ax, figsize=figsize)
     if max_quantity is None:
         max_quantity = quantity.max()
     im = ax.imshow(
         quantity, interpolation="nearest", vmin=0, vmax=max_quantity, cmap=cm.hot
     )
-    ax.xaxis.set_ticks([])
     ax.yaxis.set_ticks([])
-    if nseen is not None:
-        ax.set_title(f"examples seen: {nseen: 6d}", loc="right")
-    cbar = add_colorbar(im)
+    if oned:
+        ax.xaxis.set_ticks(np.arange(quantity.size))
+        cbar = add_colorbar(im, aspect=5)
+    else:
+        ax.xaxis.set_ticks([])
+        if nseen is not None:
+            ax.set_title(f"examples seen: {nseen: 6d}", loc="right")
+        cbar = add_colorbar(im, aspect=20)
     cbar.set_label(label)
     endfig(filename, fig, ax, closefig)
     return fig
 
 
 def plot_accuracy(acchist, ax=None, filename=None):
-    fig, ax, closefig = openfig(ax)
+    fig, ax, closefig = openfig(ax, figsize=(5, 4.5))
     i = acchist.index
     amid, alow, ahigh = acchist.values.T
     ax.fill_between(i, alow, ahigh, facecolor="blue", alpha=0.5)
@@ -205,7 +222,7 @@ def plot_accuracy(acchist, ax=None, filename=None):
 
 
 def plot_theta_summary(thetahist, ax=None, filename=None):
-    fig, ax, closefig = openfig(ax)
+    fig, ax, closefig = openfig(ax, figsize=(5, 4.5))
     thetahist = thetahist.groupby("nseen")
     tlow = thetahist.quantile(0.025)
     tmid = thetahist.quantile(0.5)
@@ -220,7 +237,7 @@ def plot_theta_summary(thetahist, ax=None, filename=None):
 
 
 def plot_rates_summary(ratehist, ax=None, filename=None):
-    fig, ax, closefig = openfig(ax)
+    fig, ax, closefig = openfig(ax, figsize=(5, 4.5))
     ratehist = ratehist.groupby("nseen")
     tlow = ratehist.quantile(0.025)
     tmid = ratehist.quantile(0.5)
@@ -269,7 +286,9 @@ def spike_counts_from_cumulative(
     ntbin = len(counts)
     log.debug("Counts for {} examples".format(ntbin))
     s = sparse.coo_matrix(counts)
-    spikecounts = pd.DataFrame({"tbin": s.row, "i": s.col, "count": s.data})
+    spikecounts = pd.DataFrame(
+        {"tbin": s.row, "i": s.col, "count": s.data}, dtype=np.int32
+    )
     if start is not None and start < 0:
         start += ntbin
     if end is None:
@@ -320,7 +339,9 @@ def get_accuracy(predictions, nseen):
         return None
     mid = 100 * k / n
     lower, upper = 100 * binom_conf_interval(k, n, conf=0.95)
-    return pd.DataFrame({"mid": mid, "lower": lower, "upper": upper}, index=[nseen])
+    return pd.DataFrame(
+        {"mid": mid, "lower": lower, "upper": upper}, index=[nseen], dtype=np.float32
+    )
 
 
 def add_nseen_index(df, nseen):
@@ -331,6 +352,30 @@ def add_nseen_index(df, nseen):
 
 def get_labels(data):
     return pd.DataFrame({"label": data["y"]}).rename_axis("example_idx")
+
+
+def get_windows(nseen, progress_assignments_window, progress_accuracy_window):
+    log.debug("Requested assignments window: {}".format(progress_assignments_window))
+    log.debug("Requested accuracy window: {}".format(progress_accuracy_window))
+    progress_window = progress_assignments_window + progress_accuracy_window
+    if progress_window > nseen:
+        log.debug(
+            "Fewer examples have been seen than required for the requested progress windows."
+        )
+        log.debug(
+            "Discarding first 20% of available examples to avoid initial contamination."
+        )
+        log.debug("Dividing remaining examples in proportion to requested windows.")
+        assignments_window = int(
+            0.8 * nseen * progress_assignments_window / progress_window
+        )
+        accuracy_window = int(0.8 * nseen * progress_accuracy_window / progress_window)
+    else:
+        assignments_window = progress_assignments_window
+        accuracy_window = progress_accuracy_window
+    log.debug("Used assignments window: {}".format(assignments_window))
+    log.debug("Used accuracy window: {}".format(accuracy_window))
+    return assignments_window, accuracy_window
 
 
 # adapted from astropy.stats.funcs
