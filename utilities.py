@@ -68,20 +68,6 @@ def theta_to_pandas(subpop, neuron_groups, nseen):
     return t
 
 
-def get_initial_weights(n_input, n_e):
-    matrices = {}
-    npr = np.random.RandomState(9728364)
-    matrices["AeAi"] = np.eye(n_e) * 10.4
-    matrices["AiAe"] = 17.0 * (1 - np.eye(n_e))
-    matrices["XeAe"] = npr.uniform(0.003, 0.303, (n_input, n_e))
-    new = np.zeros((n_input, n_e))
-    n_connect = int(0.1 * n_input * n_e)
-    connect = npr.choice(n_input * n_e, n_connect, replace=False)
-    new.flat[connect] = npr.uniform(0.0, 0.2, n_connect)
-    matrices["XeAi"] = new
-    return matrices
-
-
 def rearrange_weights(weights):
     n_input = weights.shape[0]
     n_e = weights.shape[1]
@@ -384,6 +370,35 @@ def binom_conf_interval(k, n, conf=0.68269):
     conf_interval = np.array([lowerbound, upperbound])
 
     return conf_interval
+
+
+# copied from keras.utils.to_categorical
+def to_categorical(y, num_classes=None, dtype="float32"):
+    """Converts a class vector (integers) to binary class matrix.
+    # Arguments
+        y: class vector to be converted into a matrix
+            (integers from 0 to num_classes).
+        num_classes: total number of classes.
+        dtype: The data type expected by the input, as a string
+            (`float32`, `float64`, `int32`...)
+    # Returns
+        A binary matrix representation of the input. The classes axis
+        is placed last.
+    """
+
+    y = np.array(y, dtype="int")
+    input_shape = y.shape
+    if input_shape and input_shape[-1] == 1 and len(input_shape) > 1:
+        input_shape = tuple(input_shape[:-1])
+    y = y.ravel()
+    if not num_classes:
+        num_classes = np.max(y) + 1
+    n = y.shape[0]
+    categorical = np.zeros((n, num_classes), dtype=dtype)
+    categorical[np.arange(n), y] = 1
+    output_shape = input_shape + (num_classes,)
+    categorical = np.reshape(categorical, output_shape)
+    return categorical
 
 
 # from https://stackoverflow.com/a/33505522/1840212
