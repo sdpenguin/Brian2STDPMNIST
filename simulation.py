@@ -135,13 +135,23 @@ def main(**kwargs):
         kwargs["runname"] = datetime.datetime.now().replace(microsecond=0).isoformat()
     outputpath = os.path.join(kwargs["output"], kwargs["runname"])
     try:
-        os.makedirs(outputpath, exist_ok=(kwargs["clobber"] or kwargs["resume"]))
+        os.makedirs(
+            outputpath,
+            exist_ok=(kwargs["clobber"] or kwargs["resume"] or kwargs["test_mode"]),
+        )
     except (OSError, FileExistsError):
         print(f"Refusing to overwrite existing output files in {outputpath}")
         print(f"Use --clobber to force overwriting")
         exit(8)
-    logfilename = os.path.join(outputpath, "output.log")
-    mode = "a" if kwargs["resume"] else "w"
+    suffix = ""
+    if kwargs["test_mode"]:
+        mode = "r"
+        suffix = "_test"
+    elif kwargs["resume"]:
+        mode = "a"
+    else:
+        mode = "w"
+    logfilename = os.path.join(outputpath, f"output{suffix}.log")
     fh = logging.FileHandler(logfilename, mode)
     fh.setLevel(logging.DEBUG if kwargs["debug"] else logging.INFO)
     formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
@@ -178,6 +188,7 @@ def simulation(
 
     if test_mode:
         random_weights = False
+        use_premade_weights = True
         ee_STDP_on = False
         if num_epochs is None:
             num_epochs = 1
@@ -282,7 +293,10 @@ def simulation(
     delay["ie_rec"] = (0 * b2.ms, 0 * b2.ms)
 
     input_intensity = 2.0
-    input_label_intensity = 10.0
+    if test_mode:
+        input_label_intensity = 0.0
+    else:
+        input_label_intensity = 10.0
 
     n_input = {"X": n_input, "Y": config.num_classes}
 
