@@ -121,9 +121,11 @@ def plot_weights(
         weights = sparse.coo_matrix((weights.w, (weights.i, weights.j))).todense()
     if output:
         rearranged_weights, n, m = rearrange_output_weights(weights)
+        figsize = (8, 3)
     else:
         rearranged_weights, n, m = rearrange_weights(weights)
-    fig, ax, closefig = openfig(ax, figsize=(10, 9))
+        figsize = (8, 7)
+    fig, ax, closefig = openfig(ax, figsize=figsize)
     if max_weight is None:
         max_weight = rearranged_weights.max() * 1.1
         if not output and max_weight > 0.1:
@@ -134,20 +136,25 @@ def plot_weights(
         interpolation="nearest",
         vmin=0,
         vmax=max_weight,
-        cmap=cm.hot_r,
+        cmap=cm.plasma,
     )
     if not output:
         plt.hlines(np.arange(1, m) * n - 0.5, -0.5, n * m - 0.5, lw=0.5)
         plt.vlines(np.arange(1, m) * n - 0.5, -0.5, n * m - 0.5, lw=0.5)
     else:
         plt.vlines(np.arange(1, m) * n - 0.5, -0.5, n - 0.5, lw=0.5)
-    ax.xaxis.set_ticks([])
     ax.yaxis.set_ticks([])
     # ax.set_xlim(-0.5, n_in_wide * n_e_sqrt + 0.5)
     # ax.set_ylim(-0.5, n_in_wide * n_e_sqrt + 0.5)
     if nseen is not None:
         ax.set_title(f"examples seen: {nseen: 6d}", loc="right")
-    cbar_aspect = 5 if output else 20
+    if output:
+        ax.xaxis.set_ticks(np.arange(m) * n)
+        ax.xaxis.set_ticklabels(np.arange(m))
+        cbar_aspect = 5
+    else:
+        ax.xaxis.set_ticks([])
+        cbar_aspect = 20
     cbar = add_colorbar(im, aspect=cbar_aspect)
     cbar.set_label(f"weight {label}")
     theta_text = []
@@ -207,27 +214,28 @@ def plot_quantity(
     n_sqrt = int(np.sqrt(quantity.size))
     if n_sqrt ** 2 == quantity.size:
         quantity = quantity.reshape((n_sqrt, n_sqrt))
-        figsize = (10, 9)
+        figsize = (8, 7)
         oned = False
     else:
         quantity = quantity.reshape((1, quantity.size))
-        figsize = (10, 3)
+        figsize = (8, 3)
         oned = True
     fig, ax, closefig = openfig(ax, figsize=figsize)
     if max_quantity is None:
-        max_quantity = quantity.max()
+        max_quantity = quantity.max() * 1.1
     im = ax.imshow(
-        quantity, interpolation="nearest", vmin=0, vmax=max_quantity, cmap=cm.hot
+        quantity, interpolation="nearest", vmin=0, vmax=max_quantity, cmap=cm.plasma
     )
     ax.yaxis.set_ticks([])
     if nseen is not None:
         ax.set_title(f"examples seen: {nseen: 6d}", loc="right")
     if oned:
         ax.xaxis.set_ticks(np.arange(quantity.size))
-        cbar = add_colorbar(im, aspect=5)
+        cbar_aspect = 5
     else:
         ax.xaxis.set_ticks([])
-        cbar = add_colorbar(im, aspect=20)
+        cbar_aspect = 20
+    cbar = add_colorbar(im, aspect=cbar_aspect)
     cbar.set_label(label)
     endfig(filename, fig, ax, closefig)
     return fig

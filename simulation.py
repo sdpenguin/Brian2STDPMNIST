@@ -597,6 +597,7 @@ def simulation(
                     max_weight=None,
                     nseen=metadata.nseen,
                     output=("O" in subpop),
+                    label=subpop,
                 )
 
             log.debug(
