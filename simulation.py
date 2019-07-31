@@ -284,7 +284,7 @@ def simulation(
 
     total_weight = {}
     total_weight["XeAe"] = 78.0
-    total_weight["AeOe"] = n_e["A"] / 10.0  # TODO: refine?
+    total_weight["AeOe"] = n_e["A"] / 5.0  # TODO: refine?
 
     delay = {}  # TODO: potentially specify by connName?
     delay["ee"] = (0 * b2.ms, 10 * b2.ms)
@@ -302,7 +302,7 @@ def simulation(
 
     initial_weight_matrices = get_initial_weights(n_input, n_e)
 
-    theta_init = {"O": 0.0 * b2.mV}
+    theta_init = {"O": 10.0 * b2.mV}
 
     neuron_groups = {}
     connections = {}
