@@ -89,7 +89,20 @@ def rearrange_weights(weights):
             rearranged_weights[
                 i * n_in_sqrt : (i + 1) * n_in_sqrt, j * n_in_sqrt : (j + 1) * n_in_sqrt
             ] = wk
-    return rearranged_weights
+    return rearranged_weights, n_in_sqrt, n_e_sqrt
+
+
+def rearrange_output_weights(weights):
+    n_e = weights.shape[0]
+    n_output = weights.shape[1]
+    n_e_sqrt = int(np.sqrt(n_e))
+    num_values_col = n_e_sqrt
+    num_values_row = n_e_sqrt * n_output
+    rearranged_weights = np.zeros((num_values_col, num_values_row))
+    for i in range(n_output):
+        wk = weights[:, i].reshape((n_e_sqrt, n_e_sqrt))
+        rearranged_weights[:, i * n_e_sqrt : (i + 1) * n_e_sqrt] = wk
+    return rearranged_weights, n_e_sqrt, n_output
 
 
 def plot_weights(
@@ -101,14 +114,19 @@ def plot_weights(
     filename=None,
     return_artists=False,
     nseen=None,
+    output=False,
+    label="",
 ):
     if isinstance(weights, b2.Synapses):
         weights = sparse.coo_matrix((weights.w, (weights.i, weights.j))).todense()
-    rearranged_weights = rearrange_weights(weights)
+    if output:
+        rearranged_weights, n, m = rearrange_output_weights(weights)
+    else:
+        rearranged_weights, n, m = rearrange_weights(weights)
     fig, ax, closefig = openfig(ax, figsize=(10, 9))
     if max_weight is None:
         max_weight = rearranged_weights.max()
-        if max_weight > 0.1:
+        if not output and max_weight > 0.1:
             # quantize to 0.25, 0.50, 0.75, 1.00
             max_weight = ceil(max_weight * 4) / 4
     im = ax.imshow(
@@ -118,12 +136,20 @@ def plot_weights(
         vmax=max_weight,
         cmap=cm.hot_r,
     )
+    if not output:
+        plt.hlines(np.arange(1, m) * n - 0.5, -0.5, n * m - 0.5, lw=0.5)
+        plt.vlines(np.arange(1, m) * n - 0.5, -0.5, n * m - 0.5, lw=0.5)
+    else:
+        plt.vlines(np.arange(1, m) * n - 0.5, -0.5, n - 0.5, lw=0.5)
     ax.xaxis.set_ticks([])
     ax.yaxis.set_ticks([])
+    # ax.set_xlim(-0.5, n_in_wide * n_e_sqrt + 0.5)
+    # ax.set_ylim(-0.5, n_in_wide * n_e_sqrt + 0.5)
     if nseen is not None:
         ax.set_title(f"examples seen: {nseen: 6d}", loc="right")
-    cbar = add_colorbar(im)
-    cbar.set_label("weight")
+    cbar_aspect = 5 if output else 20
+    cbar = add_colorbar(im, aspect=cbar_aspect)
+    cbar.set_label(f"weight {label}")
     theta_text = []
     assignments_text = []
     if assignments is not None or theta is not None:
@@ -194,13 +220,13 @@ def plot_quantity(
         quantity, interpolation="nearest", vmin=0, vmax=max_quantity, cmap=cm.hot
     )
     ax.yaxis.set_ticks([])
+    if nseen is not None:
+        ax.set_title(f"examples seen: {nseen: 6d}", loc="right")
     if oned:
         ax.xaxis.set_ticks(np.arange(quantity.size))
         cbar = add_colorbar(im, aspect=5)
     else:
         ax.xaxis.set_ticks([])
-        if nseen is not None:
-            ax.set_title(f"examples seen: {nseen: 6d}", loc="right")
         cbar = add_colorbar(im, aspect=20)
     cbar.set_label(label)
     endfig(filename, fig, ax, closefig)
@@ -208,13 +234,13 @@ def plot_quantity(
 
 
 def plot_accuracy(acchist, ax=None, filename=None):
-    fig, ax, closefig = openfig(ax, figsize=(5, 4.5))
+    fig, ax, closefig = openfig(ax, figsize=(6, 4.5))
     i = acchist.index
     amid, alow, ahigh = acchist.values.T
     ax.fill_between(i, alow, ahigh, facecolor="blue", alpha=0.5)
     ax.plot(i, amid, color="blue")
     ax.set_xlabel("examples seen")
-    ax.set_ylabel("accuracy (mean and 95% conf. int.")
+    ax.set_ylabel("accuracy (mean and 95% conf. int.)")
     ax.set_xlim(xmin=0)
     ax.set_ylim(ymin=0, ymax=100)
     endfig(filename, fig, ax, closefig)
@@ -222,7 +248,7 @@ def plot_accuracy(acchist, ax=None, filename=None):
 
 
 def plot_theta_summary(thetahist, ax=None, filename=None):
-    fig, ax, closefig = openfig(ax, figsize=(5, 4.5))
+    fig, ax, closefig = openfig(ax, figsize=(6, 4.5))
     thetahist = thetahist.groupby("nseen")
     tlow = thetahist.quantile(0.025)
     tmid = thetahist.quantile(0.5)
@@ -237,7 +263,7 @@ def plot_theta_summary(thetahist, ax=None, filename=None):
 
 
 def plot_rates_summary(ratehist, ax=None, filename=None):
-    fig, ax, closefig = openfig(ax, figsize=(5, 4.5))
+    fig, ax, closefig = openfig(ax, figsize=(6, 4.5))
     ratehist = ratehist.groupby("nseen")
     tlow = ratehist.quantile(0.025)
     tmid = ratehist.quantile(0.5)

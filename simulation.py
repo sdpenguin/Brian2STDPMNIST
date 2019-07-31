@@ -266,6 +266,7 @@ def simulation(
     population_names = ["A", "O"]
     connection_names = ["XA", "YO", "AO"]
     config.save_conns = ["XeAe", "YeOe", "AeOe"]
+    config.plot_conns = ["XeAe", "AeOe"]
     forward_conntype_names = ["ee"]
     recurrent_conntype_names = ["ei_rec", "ie_rec"]
     stdp_conn_names = ["XeAe", "AeOe"]
@@ -491,7 +492,6 @@ def simulation(
                         config.output_path, "spikerates-summary-{}.pdf".format(subpop_e)
                     )
                     plot_rates_summary(store.select(f"rates/{subpop_e}"), filename=fn)
-                    plot_rates_summary(store.select(f"rates/{subpop_e}"), filename=fn)
                 if name in population_names:
                     spikecounts_past = spike_counts_from_cumulative(
                         csc, n_data, end=-accuracy_window, atmost=assignments_window
@@ -536,7 +536,7 @@ def simulation(
                         plot_quantity(
                             spikerates,
                             filename=fn,
-                            label="spike rate",
+                            label=f"spike rate {subpop_e}",
                             nseen=metadata.nseen,
                         )
                     theta = theta_to_pandas(subpop_e, neuron_groups, metadata.nseen)
@@ -545,7 +545,10 @@ def simulation(
                         config.output_path, "theta-{}.pdf".format(subpop_e)
                     )
                     plot_quantity(
-                        theta, filename=fn, label="theta (mV)", nseen=metadata.nseen
+                        theta,
+                        filename=fn,
+                        label=f"theta {subpop_e} (mV)",
+                        nseen=metadata.nseen,
                     )
                     fn = os.path.join(
                         config.output_path, "theta-summary-{}.pdf".format(subpop_e)
@@ -555,8 +558,11 @@ def simulation(
                 log.info(f"Progress for connection {conn}")
                 conn_df = connections_to_pandas(connections[conn], metadata.nseen)
                 store.append(f"connections/{conn}", conn_df)
+            for conn in config.plot_conns:
                 subpop = conn[-2:]
-                if subpop[0] != "O":
+                if "O" in subpop:
+                    assignments = None
+                else:
                     try:
                         assignments = store.select(
                             f"assignments/{subpop}", where="nseen == metadata.nseen"
@@ -564,15 +570,17 @@ def simulation(
                         assignments = assignments.reset_index("nseen", drop=True)
                     except KeyError:
                         assignments = None
-                    fn = os.path.join(config.output_path, "weights-{}.pdf".format(conn))
-                    plot_weights(
-                        connections[conn],
-                        assignments,
-                        theta=None,
-                        filename=fn,
-                        max_weight=None,
-                        nseen=metadata.nseen,
-                    )
+                fn = os.path.join(config.output_path, "weights-{}.pdf".format(conn))
+                plot_weights(
+                    connections[conn],
+                    assignments,
+                    theta=None,
+                    filename=fn,
+                    max_weight=None,
+                    nseen=metadata.nseen,
+                    output=("O" in subpop),
+                )
+
             log.debug(
                 "progress took {:.3f} seconds".format(time.process_time() - starttime)
             )
