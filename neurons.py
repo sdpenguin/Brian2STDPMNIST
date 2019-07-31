@@ -87,15 +87,6 @@ class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
         )
 
     def create_equations(self):
-        self.model += b2.Equations(
-            """
-            dtimer/dt = 0.1  : second
-            """
-        )
-        # This timer seems a bit odd: it increases more slowly than the regular
-        # simulation time, and is only used in the threshold code, to prevent spikes.
-        # It effectively increase the refractory time affecting spikes (but not dv/dt)
-        # by a factor of 10 (to biologically unrealistic values).
         self.model = b2.Equations(
             str(self.model), v_rest="v_rest_e", tau="tau_e", v_eqm_synI="v_eqm_synI_e"
         )
@@ -104,9 +95,7 @@ class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
         else:
             self.model += b2.Equations("dtheta/dt = -theta / tc_theta  : volt")
 
-        self.threshold = (
-            "(v > (theta - theta_init + v_thresh_e)) and (timer > refrac_e)"
-        )
+        self.threshold = "(v > (theta - theta_init + v_thresh_e))"
 
         self.refractory = "refrac_e"
 
