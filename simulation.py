@@ -122,8 +122,8 @@ def get_initial_weights(n_input, n_e):
     matrices["OiOe"] = 17.0 * (1 - np.eye(n_e["O"]))
     matrices["YeOe"] = np.eye(n_e["O"]) * 10.4
     # between neuron groups A and O --- TODO: refine
-    matrices["AeOe"] = npr.uniform(0.003, 0.303, (n_e["A"], n_e["O"]))
-    # matrices["AeOe"] = np.zeros((n_e["A"], n_e["O"]))
+    # matrices["AeOe"] = npr.uniform(0.003, 0.303, (n_e["A"], n_e["O"]))
+    matrices["AeOe"] = np.zeros((n_e["A"], n_e["O"])) + 0.1
     return matrices
 
 
@@ -273,7 +273,7 @@ def simulation(
 
     total_weight = {}
     total_weight["XeAe"] = 78.0
-    total_weight["AeOe"] = 78.0  # TODO: refine?
+    total_weight["AeOe"] = n_e["A"] / 10.0  # TODO: refine?
 
     delay = {}  # TODO: potentially specify by connName?
     delay["ee"] = (0 * b2.ms, 10 * b2.ms)
@@ -287,6 +287,8 @@ def simulation(
     n_input = {"X": n_input, "Y": config.num_classes}
 
     initial_weight_matrices = get_initial_weights(n_input, n_e)
+
+    theta_init = {"O": 0.0 * b2.mV}
 
     neuron_groups = {}
     connections = {}
@@ -308,6 +310,8 @@ def simulation(
 
         if not random_weights:
             neuron_groups[subpop_e].theta = load_theta(name)
+        elif name in theta_init:
+            neuron_groups[subpop_e].theta = theta_init[name]
 
         for connType in recurrent_conntype_names:
             log.info(f"Creating recurrent connections for {connType}")
