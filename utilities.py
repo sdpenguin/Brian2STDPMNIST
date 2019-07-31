@@ -100,7 +100,7 @@ def rearrange_output_weights(weights):
     num_values_row = n_e_sqrt * n_output
     rearranged_weights = np.zeros((num_values_col, num_values_row))
     for i in range(n_output):
-        wk = weights[:, i].reshape((n_e_sqrt, n_e_sqrt))
+        wk = weights[:, i].reshape((n_e_sqrt, n_e_sqrt)).T
         rearranged_weights[:, i * n_e_sqrt : (i + 1) * n_e_sqrt] = wk
     return rearranged_weights, n_e_sqrt, n_output
 
@@ -125,7 +125,7 @@ def plot_weights(
         rearranged_weights, n, m = rearrange_weights(weights)
     fig, ax, closefig = openfig(ax, figsize=(10, 9))
     if max_weight is None:
-        max_weight = rearranged_weights.max()
+        max_weight = rearranged_weights.max() * 1.1
         if not output and max_weight > 0.1:
             # quantize to 0.25, 0.50, 0.75, 1.00
             max_weight = ceil(max_weight * 4) / 4
