@@ -265,7 +265,7 @@ def simulation(
     b2.defaultclock.dt = 0.5 * b2.ms
     log.info("defaultclock.dt = {}".format(str(b2.defaultclock.dt)))
 
-    n_e = {"A": size, "O": config.num_classes}
+    n_e = {"A": size, "O": config.num_classes, "X": n_input, "Y": config.num_classes}
     n_i = n_e
 
     single_example_time = 0.35 * b2.second
@@ -500,9 +500,7 @@ def simulation(
                         .mean()
                         .astype(np.float32)
                     )
-                    spikerates = spikerates.reindex(
-                        np.arange(len(spikerates)), fill_value=0
-                    )
+                    spikerates = spikerates.reindex(np.arange(n_e[name]), fill_value=0)
                     spikerates = add_nseen_index(spikerates, metadata.nseen)
                     store.append(f"rates/{subpop_e}", spikerates)
                     store.flush()
