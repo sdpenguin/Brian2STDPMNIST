@@ -139,17 +139,15 @@ def plot_weights(
         cmap=cm.plasma,
     )
     if not output:
-        plt.hlines(np.arange(1, m) * n - 0.5, -0.5, n * m - 0.5, lw=0.5)
-        plt.vlines(np.arange(1, m) * n - 0.5, -0.5, n * m - 0.5, lw=0.5)
+        plt.hlines(np.arange(1, m) * n - 0.5, -0.5, n * m - 0.5, lw=0.5, colors="w")
+        plt.vlines(np.arange(1, m) * n - 0.5, -0.5, n * m - 0.5, lw=0.5, colors="w")
     else:
-        plt.vlines(np.arange(1, m) * n - 0.5, -0.5, n - 0.5, lw=0.5)
+        plt.vlines(np.arange(1, m) * n - 0.5, -0.5, n - 0.5, lw=0.5, colors="w")
     ax.yaxis.set_ticks([])
-    # ax.set_xlim(-0.5, n_in_wide * n_e_sqrt + 0.5)
-    # ax.set_ylim(-0.5, n_in_wide * n_e_sqrt + 0.5)
     if nseen is not None:
         ax.set_title(f"examples seen: {nseen: 6d}", loc="right")
     if output:
-        ax.xaxis.set_ticks(np.arange(m) * n)
+        ax.xaxis.set_ticks(np.arange(m) * n + n // 2)
         ax.xaxis.set_ticklabels(np.arange(m))
         cbar_aspect = 5
     else:
