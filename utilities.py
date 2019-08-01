@@ -253,7 +253,7 @@ def plot_accuracy(acchist, ax=None, filename=None):
     return fig
 
 
-def plot_theta_summary(thetahist, ax=None, filename=None):
+def plot_theta_summary(thetahist, ax=None, filename=None, label=""):
     fig, ax, closefig = openfig(ax, figsize=(6, 4.5))
     thetahist = thetahist.groupby("nseen")
     tlow = thetahist.quantile(0.025)
@@ -262,13 +262,13 @@ def plot_theta_summary(thetahist, ax=None, filename=None):
     ax.fill_between(tmid.index, tlow, thigh, facecolor="blue", alpha=0.5)
     ax.plot(tmid.index, tmid, color="blue")
     ax.set_xlabel("examples seen")
-    ax.set_ylabel("theta (median and 95% range)")
+    ax.set_ylabel(f"theta {label} (median and 95% range)")
     ax.set_xlim(xmin=0)
     endfig(filename, fig, ax, closefig)
     return fig
 
 
-def plot_rates_summary(ratehist, ax=None, filename=None):
+def plot_rates_summary(ratehist, ax=None, filename=None, label=""):
     fig, ax, closefig = openfig(ax, figsize=(6, 4.5))
     ratehist = ratehist.groupby("nseen")
     tlow = ratehist.quantile(0.025)
@@ -277,7 +277,7 @@ def plot_rates_summary(ratehist, ax=None, filename=None):
     ax.fill_between(tmid.index, tlow, thigh, facecolor="blue", alpha=0.5)
     ax.plot(tmid.index, tmid, color="blue")
     ax.set_xlabel("examples seen")
-    ax.set_ylabel("spike rate (median and 95% range)")
+    ax.set_ylabel(f"spike rate {label} (median and 95% range)")
     ax.set_xlim(xmin=0)
     endfig(filename, fig, ax, closefig)
     return fig
