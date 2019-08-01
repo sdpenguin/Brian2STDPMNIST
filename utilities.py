@@ -213,7 +213,7 @@ def plot_quantity(
         quantity = quantity.values
     n_sqrt = int(np.sqrt(quantity.size))
     if n_sqrt ** 2 == quantity.size:
-        quantity = quantity.reshape((n_sqrt, n_sqrt))
+        quantity = quantity.reshape((n_sqrt, n_sqrt)).T
         figsize = (8, 7)
         oned = False
     else:
