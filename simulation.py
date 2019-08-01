@@ -302,8 +302,6 @@ def simulation(
 
     initial_weight_matrices = get_initial_weights(n_input, n_e)
 
-    theta_init = {"O": 10.0 * b2.mV}
-
     neuron_groups = {}
     connections = {}
     spike_monitors = {}
@@ -324,8 +322,6 @@ def simulation(
 
         if not random_weights:
             neuron_groups[subpop_e].theta = load_theta(name)
-        elif name in theta_init:
-            neuron_groups[subpop_e].theta = theta_init[name]
 
         for connType in recurrent_conntype_names:
             log.info(f"Creating recurrent connections for {connType}")

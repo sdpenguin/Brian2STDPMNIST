@@ -82,11 +82,12 @@ class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
                 "theta_plus_e": 0.05 * b2.mV,
                 "theta_init": 20.0 * b2.mV,
                 "refrac_e": 5.0 * b2.ms,
-                "tc_theta": 1e7 * b2.ms,
+                "tc_theta": 1e6 * b2.ms,
             }
         )
 
     def create_equations(self):
+        # TODO: should investigate effect of removing extended refractory period
         self.model = b2.Equations(
             str(self.model), v_rest="v_rest_e", tau="tau_e", v_eqm_synI="v_eqm_synI_e"
         )
@@ -99,7 +100,7 @@ class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
 
         self.refractory = "refrac_e"
 
-        self.reset = "v = v_reset_e; timer = 0*ms"
+        self.reset = "v = v_reset_e"
         if not self.test_mode:
             self.reset += "; theta += theta_plus_e"
 
