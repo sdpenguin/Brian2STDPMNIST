@@ -11,7 +11,6 @@ from scipy.special import betaincinv
 import brian2 as b2
 from urllib.request import urlretrieve
 from inspect import getargvalues
-from attrdict import AttrDict
 
 import matplotlib
 
