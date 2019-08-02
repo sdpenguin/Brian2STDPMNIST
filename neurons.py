@@ -1,3 +1,8 @@
+import logging
+
+logging.captureWarnings(True)
+log = logging.getLogger("spiking-mnist")
+
 import brian2 as b2
 
 
@@ -66,10 +71,13 @@ class DiehlAndCookBaseNeuronGroup(b2.NeuronGroup):
 class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
     """Simple model of an excitatory (pyramidal) neuron"""
 
-    def __init__(self, N, test_mode=True):
+    def __init__(self, N, const_theta=True, custom_namespace=None):
         self.N = N
-        self.test_mode = test_mode
+        self.const_theta = const_theta
         super().__init__()
+        if custom_namespace is not None:
+            self.namespace.update(custom_namespace)
+        log.debug(f"Neuron namespace:\n{self.namespace}".replace(",", ",\n"))
 
     def create_namespace(self):
         self.namespace.update(
@@ -91,7 +99,7 @@ class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
         self.model = b2.Equations(
             str(self.model), v_rest="v_rest_e", tau="tau_e", v_eqm_synI="v_eqm_synI_e"
         )
-        if self.test_mode:
+        if self.const_theta:
             self.model += b2.Equations("theta  : volt")
         else:
             self.model += b2.Equations("dtheta/dt = -theta / tc_theta  : volt")
@@ -101,7 +109,7 @@ class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
         self.refractory = "refrac_e"
 
         self.reset = "v = v_reset_e"
-        if not self.test_mode:
+        if not self.const_theta:
             self.reset += "; theta += theta_plus_e"
 
     def initialize(self):

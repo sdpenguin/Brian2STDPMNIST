@@ -64,7 +64,8 @@ from synapses import DiehlAndCookSynapses
 from IPython import embed
 
 
-# b2.set_device('cpp_standalone', build_on_run=False)
+# b2.set_device('cpp_standalone', build_on_run=False)  # cannot use with network operations
+# b2.prefs.codegen.target = 'numpy'  # faster startup, but slower iterations
 
 
 class config:
@@ -203,7 +204,11 @@ def simulation(
         if num_epochs is None:
             num_epochs = 1
         if progress_interval is None:
-            progress_interval = 0
+            progress_interval = 1000
+        if progress_assignments_window is None:
+            progress_assignments_window = 0
+        if progress_accuracy_window is None:
+            progress_accuracy_window = 1000000
     else:
         random_weights = not (resume or use_premade_weights)
         ee_STDP_on = True
@@ -211,12 +216,10 @@ def simulation(
             num_epochs = 3
         if progress_interval is None:
             progress_interval = 1000
-
-    if progress_interval > 0:
         if progress_assignments_window is None:
-            progress_assignments_window = 10000
+            progress_assignments_window = 1000
         if progress_accuracy_window is None:
-            progress_accuracy_window = 10000
+            progress_accuracy_window = 1000
 
     log.info("Brian2STDPMNIST/simulation.py")
     log.info("Arguments =============")
@@ -351,8 +354,18 @@ def simulation(
         log.info(f"Creating neuron group {name}")
         subpop_e = name + "e"
         subpop_i = name + "i"
+        const_theta = False
+        neuron_namespace = {}
+        if test_mode:
+            const_theta = True
+            if name == "O":
+                # TODO: move to a config variable
+                neuron_namespace["tc_theta"] = 1e5 * b2.ms
+                const_theta = False
         nge = neuron_groups[subpop_e] = DiehlAndCookExcitatoryNeuronGroup(
-            n_neurons[subpop_e], test_mode=test_mode
+            n_neurons[subpop_e],
+            const_theta=const_theta,
+            custom_namespace=neuron_namespace,
         )
         ngi = neuron_groups[subpop_i] = DiehlAndCookInhibitoryNeuronGroup(
             n_neurons[subpop_i]
@@ -410,7 +423,7 @@ def simulation(
 
     if test_mode:
         # make output neurons more sensitive
-        neuron_groups["Oe"].theta = 10.0 * b2.mV  # TODO: refine
+        neuron_groups["Oe"].theta = 5.0 * b2.mV  # TODO: refine
 
     # -------------------------------------------------------------------------
     # create TimedArray of rates for input examples
@@ -472,6 +485,7 @@ def simulation(
             postName = name[1] + connType[1]
             connName = preName + postName
             stdp_on = ee_STDP_on and connName in stdp_conn_names
+            nu_factor = 10.0 if name in ["AO"] else None
             conn = connections[connName] = DiehlAndCookSynapses(
                 neuron_groups[preName],
                 neuron_groups[postName],
@@ -479,6 +493,7 @@ def simulation(
                 stdp_on=stdp_on,
                 stdp_rule=stdp_rule,
                 custom_namespace=custom_namespace,
+                nu_factor=nu_factor,
             )
             conn.connect()  # all-to-all connection
             minDelay, maxDelay = delay[connType]
@@ -522,6 +537,8 @@ def simulation(
         network_operations.append(normalize_weights)
 
     def record_cumulative_spike_counts(t=None):
+        if t is None or t > 0:
+            metadata.nseen += 1
         for name in population_names + input_population_names:
             subpop_e = name + "e"
             count = pd.DataFrame(
@@ -530,8 +547,6 @@ def simulation(
             count = count.rename_axis("tbin")
             count = count.rename_axis("neuron", axis="columns")
             store.append(f"cumulative_spike_counts/{subpop_e}", count)
-        if t is None or t > 0:
-            metadata.nseen += 1
 
     @b2.network_operation(dt=total_example_time, order=0)
     def record_cumulative_spike_counts_net_op(t):
@@ -552,17 +567,18 @@ def simulation(
             metadata.nseen, progress_assignments_window, progress_accuracy_window
         )
         for name in population_names + input_population_names:
-            log.info(f"Progress for population {name}")
+            log.debug(f"Progress for population {name}")
             subpop_e = name + "e"
             csc = store.select(f"cumulative_spike_counts/{subpop_e}")
             spikecounts_present = spike_counts_from_cumulative(
-                csc, n_data, start=-accuracy_window
+                csc, n_data, metadata.nseen, n_neurons[subpop_e], start=-accuracy_window
             )
             n_spikes_present = spikecounts_present["count"].sum()
             if n_spikes_present > 0:
                 spikerates = (
                     spikecounts_present.groupby("i")["count"].mean().astype(np.float32)
                 )
+                # this reindex no longer necessary?
                 spikerates = spikerates.reindex(
                     np.arange(n_neurons[subpop_e]), fill_value=0
                 )
@@ -578,7 +594,12 @@ def simulation(
             if name in population_names:
                 if not test_mode:
                     spikecounts_past = spike_counts_from_cumulative(
-                        csc, n_data, end=-accuracy_window, atmost=assignments_window
+                        csc,
+                        n_data,
+                        metadata.nseen,
+                        n_neurons[subpop_e],
+                        end=-accuracy_window,
+                        atmost=assignments_window,
                     )
                     log.debug(
                         "Assignments based on {} spikes".format(len(spikecounts_past))
@@ -605,11 +626,14 @@ def simulation(
                     accuracy = get_accuracy(predictions, metadata.nseen)
                     store.append(f"accuracy/{subpop_e}", accuracy)
                     store.flush()
-                    log.info(
-                        "Accuracy [{}]: {:.1f}%  ({:.1f}–{:.1f}% 1σ conf. int.)".format(
-                            subpop_e, *accuracy.values.flat
-                        )
+                    accuracy_msg = (
+                        "Accuracy [{}]: {:.1f}%  ({:.1f}–{:.1f}% 1σ conf. int.)\n"
+                        "{:.1f}% of examples have no prediction\n"
+                        "Accuracy excluding non-predictions: "
+                        "{:.1f}%  ({:.1f}–{:.1f}% 1σ conf. int.)"
                     )
+
+                    log.info(accuracy_msg.format(subpop_e, *accuracy.values.flat))
                     fn = os.path.join(
                         config.output_path, "accuracy-{}.pdf".format(subpop_e)
                     )
@@ -623,25 +647,22 @@ def simulation(
                         label=f"spike rate {subpop_e}",
                         nseen=metadata.nseen,
                     )
-                if not test_mode:
-                    theta = theta_to_pandas(subpop_e, neuron_groups, metadata.nseen)
-                    store.append(f"theta/{subpop_e}", theta)
-                    fn = os.path.join(
-                        config.output_path, "theta-{}.pdf".format(subpop_e)
-                    )
-                    plot_quantity(
-                        theta,
-                        filename=fn,
-                        label=f"theta {subpop_e} (mV)",
-                        nseen=metadata.nseen,
-                    )
-                    fn = os.path.join(
-                        config.output_path, "theta-summary-{}.pdf".format(subpop_e)
-                    )
-                    plot_theta_summary(
-                        store.select(f"theta/{subpop_e}"), filename=fn, label=subpop_e
-                    )
-        if not test_mode:
+                theta = theta_to_pandas(subpop_e, neuron_groups, metadata.nseen)
+                store.append(f"theta/{subpop_e}", theta)
+                fn = os.path.join(config.output_path, "theta-{}.pdf".format(subpop_e))
+                plot_quantity(
+                    theta,
+                    filename=fn,
+                    label=f"theta {subpop_e} (mV)",
+                    nseen=metadata.nseen,
+                )
+                fn = os.path.join(
+                    config.output_path, "theta-summary-{}.pdf".format(subpop_e)
+                )
+                plot_theta_summary(
+                    store.select(f"theta/{subpop_e}"), filename=fn, label=subpop_e
+                )
+        if not test_mode or metadata.nseen == 0:
             for conn in config.save_conns:
                 log.info(f"Saving connection {conn}")
                 conn_df = connections_to_pandas(connections[conn], metadata.nseen)
