@@ -601,9 +601,8 @@ def simulation(
                         end=-accuracy_window,
                         atmost=assignments_window,
                     )
-                    log.debug(
-                        "Assignments based on {} spikes".format(len(spikecounts_past))
-                    )
+                    n_spikes_past = spikecounts_past["count"].sum()
+                    log.debug("Assignments based on {} spikes".format(n_spikes_past))
                     if name == "O":
                         assignments = pd.DataFrame(
                             {"label": np.arange(n_neurons[subpop_e], dtype=np.int32)}
