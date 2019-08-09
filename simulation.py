@@ -210,7 +210,7 @@ def simulation(
         if progress_accuracy_window is None:
             progress_accuracy_window = 1000000
     else:
-        random_weights = not (resume or use_premade_weights)
+        random_weights = not resume
         ee_STDP_on = True
         if num_epochs is None:
             num_epochs = 3
