@@ -734,9 +734,9 @@ def simulation(
     # -------------------------------------------------------------------------
 
     log.info("Saving results")
+    progress()
     if not test_mode:
         record_cumulative_spike_counts()
-        progress()
         save_theta(population_names, neuron_groups)
         save_connections(connections)
 
