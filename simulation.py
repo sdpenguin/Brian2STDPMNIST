@@ -516,7 +516,7 @@ def simulation(
 
     if ee_STDP_on:
 
-        @b2.network_operation(dt=total_example_time, order=2)
+        @b2.network_operation(dt=total_example_time, order=1)
         def normalize_weights(t):
             for connName in connections:
                 if connName in stdp_conn_names:
@@ -698,7 +698,7 @@ def simulation(
 
     if progress_interval > 0:
 
-        @b2.network_operation(dt=total_example_time * progress_interval, order=1)
+        @b2.network_operation(dt=total_example_time * progress_interval, order=2)
         def progress_net_op(t):
             # if t < total_example_time:
             #    return None
