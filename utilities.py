@@ -115,16 +115,24 @@ def plot_weights(
     return_artists=False,
     nseen=None,
     output=False,
+    feedback=False,
     label="",
 ):
+    log.debug(f"Plotting weights {label}")
+    log.debug(f"output={output}, feedback={feedback}")
+    log.debug(f"weights = \n{weights}")
     if isinstance(weights, b2.Synapses):
         weights = sparse.coo_matrix((weights.w, (weights.i, weights.j))).todense()
+    log.debug(f"dense weights shape = {weights.shape}")
     if output:
+        if feedback:
+            weights = weights.T
         rearranged_weights, n, m = rearrange_output_weights(weights)
         figsize = (8, 3)
     else:
         rearranged_weights, n, m = rearrange_weights(weights)
         figsize = (8, 7)
+    log.debug(f"rearranged weights shape = {rearranged_weights.shape}")
     fig, ax, closefig = openfig(ax, figsize=figsize)
     if max_weight is None:
         max_weight = rearranged_weights.max() * 1.1
