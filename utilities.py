@@ -139,17 +139,15 @@ def plot_weights(
         cmap=cm.plasma,
     )
     if not output:
-        plt.hlines(np.arange(1, m) * n - 0.5, -0.5, n * m - 0.5, lw=0.5)
-        plt.vlines(np.arange(1, m) * n - 0.5, -0.5, n * m - 0.5, lw=0.5)
+        plt.hlines(np.arange(1, m) * n - 0.5, -0.5, n * m - 0.5, lw=0.5, colors="w")
+        plt.vlines(np.arange(1, m) * n - 0.5, -0.5, n * m - 0.5, lw=0.5, colors="w")
     else:
-        plt.vlines(np.arange(1, m) * n - 0.5, -0.5, n - 0.5, lw=0.5)
+        plt.vlines(np.arange(1, m) * n - 0.5, -0.5, n - 0.5, lw=0.5, colors="w")
     ax.yaxis.set_ticks([])
-    # ax.set_xlim(-0.5, n_in_wide * n_e_sqrt + 0.5)
-    # ax.set_ylim(-0.5, n_in_wide * n_e_sqrt + 0.5)
     if nseen is not None:
         ax.set_title(f"examples seen: {nseen: 6d}", loc="right")
     if output:
-        ax.xaxis.set_ticks(np.arange(m) * n)
+        ax.xaxis.set_ticks(np.arange(m) * n + n // 2)
         ax.xaxis.set_ticklabels(np.arange(m))
         cbar_aspect = 5
     else:
@@ -213,7 +211,7 @@ def plot_quantity(
         quantity = quantity.values
     n_sqrt = int(np.sqrt(quantity.size))
     if n_sqrt ** 2 == quantity.size:
-        quantity = quantity.reshape((n_sqrt, n_sqrt))
+        quantity = quantity.reshape((n_sqrt, n_sqrt)).T
         figsize = (8, 7)
         oned = False
     else:
@@ -255,7 +253,7 @@ def plot_accuracy(acchist, ax=None, filename=None):
     return fig
 
 
-def plot_theta_summary(thetahist, ax=None, filename=None):
+def plot_theta_summary(thetahist, ax=None, filename=None, label=""):
     fig, ax, closefig = openfig(ax, figsize=(6, 4.5))
     thetahist = thetahist.groupby("nseen")
     tlow = thetahist.quantile(0.025)
@@ -264,13 +262,13 @@ def plot_theta_summary(thetahist, ax=None, filename=None):
     ax.fill_between(tmid.index, tlow, thigh, facecolor="blue", alpha=0.5)
     ax.plot(tmid.index, tmid, color="blue")
     ax.set_xlabel("examples seen")
-    ax.set_ylabel("theta (median and 95% range)")
+    ax.set_ylabel(f"theta {label} (median and 95% range)")
     ax.set_xlim(xmin=0)
     endfig(filename, fig, ax, closefig)
     return fig
 
 
-def plot_rates_summary(ratehist, ax=None, filename=None):
+def plot_rates_summary(ratehist, ax=None, filename=None, label=""):
     fig, ax, closefig = openfig(ax, figsize=(6, 4.5))
     ratehist = ratehist.groupby("nseen")
     tlow = ratehist.quantile(0.025)
@@ -279,7 +277,7 @@ def plot_rates_summary(ratehist, ax=None, filename=None):
     ax.fill_between(tmid.index, tlow, thigh, facecolor="blue", alpha=0.5)
     ax.plot(tmid.index, tmid, color="blue")
     ax.set_xlabel("examples seen")
-    ax.set_ylabel("spike rate (median and 95% range)")
+    ax.set_ylabel(f"spike rate {label} (median and 95% range)")
     ax.set_xlim(xmin=0)
     endfig(filename, fig, ax, closefig)
     return fig
