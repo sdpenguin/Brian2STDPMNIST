@@ -30,8 +30,9 @@ import brian2 as b2
 import pickle
 import time
 import datetime
-from inspect import getargvalues, currentframe, getframeinfo
+from inspect import currentframe, getframeinfo
 import json
+import shutil
 
 from utilities import (
     get_matrix_from_file,
@@ -53,6 +54,8 @@ from utilities import (
     plot_accuracy,
     connections_to_pandas,
     plot_weights,
+    record_arguments,
+    create_test_store,
 )
 
 from neurons import DiehlAndCookExcitatoryNeuronGroup, DiehlAndCookInhibitoryNeuronGroup
@@ -146,7 +149,7 @@ def main(**kwargs):
         exit(8)
     suffix = ""
     if kwargs["test_mode"]:
-        mode = "r"
+        mode = "w"
         suffix = "_test"
     elif kwargs["resume"]:
         mode = "a"
@@ -158,7 +161,11 @@ def main(**kwargs):
     formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
     fh.setFormatter(formatter)
     log.addHandler(fh)
-    storefilename = os.path.join(outputpath, "store.h5")
+    storefilename = os.path.join(outputpath, f"store{suffix}.h5")
+    if kwargs["test_mode"]:
+        originalstorefilename = os.path.join(outputpath, f"store.h5")
+        create_test_store(storefilename, originalstorefilename)
+        mode = "a"
     with pd.HDFStore(storefilename, mode=mode, complib="blosc", complevel=9) as store:
         kwargs["store"] = store
         simulation(**kwargs)
@@ -213,11 +220,7 @@ def simulation(
 
     log.info("Brian2STDPMNIST/simulation.py")
     log.info("Arguments =============")
-    args, _, _, values = getargvalues(currentframe())
-    args.remove("store")
-    for a in args:
-        log.info(f"{a}: {locals()[a]}")
-        metadata["args"] = args
+    metadata["args"] = record_arguments(currentframe(), locals())
     log.info("=======================")
 
     # load MNIST
@@ -240,7 +243,10 @@ def simulation(
     else:
         log.info("Training run {}".format(runname))
 
-    config.output_path = os.path.join(runpath, "output/")
+    if test_mode:
+        config.output_path = os.path.join(runpath, "output_test/")
+    else:
+        config.output_path = os.path.join(runpath, "output/")
     os.makedirs(config.output_path, exist_ok=True)
 
     if test_mode:
@@ -353,7 +359,14 @@ def simulation(
         )
 
         if not random_weights:
-            neuron_groups[subpop_e].theta = load_theta(name)
+            theta_saved = load_theta(name)
+            if len(theta_saved) != n_neurons[subpop_e]:
+                raise ValueError(
+                    f"Requested size of neuron population {subpop_e} "
+                    f"({n_neurons[subpop_e]}) does not match size of "
+                    f"saved data ({len(theta_saved)})"
+                )
+            neuron_groups[subpop_e].theta = theta_saved
         elif name in theta_init:
             neuron_groups[subpop_e].theta = theta_init[name]
 
@@ -377,9 +390,16 @@ def simulation(
             # except the diagonal, which contains zero
             # TODO: these weights appear to have been tuned,
             #       we may need different values for the O layer
+            weightMatrix = None
             if use_premade_weights:
-                weightMatrix = load_connections(connName, random=True)
-            else:
+                try:
+                    weightMatrix = load_connections(connName, random=random_weights)
+                except FileNotFoundError:
+                    log.info(
+                        f"Requested premade {'random' if random_weights else ''} "
+                        f"weights, but none found for {connName}"
+                    )
+            if weightMatrix is None:
                 log.info("Using generated initial weight matrices")
                 weightMatrix = initial_weight_matrices[connName]
             conn.w = weightMatrix.flatten()
@@ -387,6 +407,10 @@ def simulation(
         log.debug(f"Creating spike monitors for {name}")
         spike_monitors[subpop_e] = b2.SpikeMonitor(nge, record=record_spikes)
         spike_monitors[subpop_i] = b2.SpikeMonitor(ngi, record=record_spikes)
+
+    if test_mode:
+        # make output neurons more sensitive
+        neuron_groups["Oe"].theta = 10.0 * b2.mV  # TODO: refine
 
     # -------------------------------------------------------------------------
     # create TimedArray of rates for input examples
@@ -414,7 +438,10 @@ def simulation(
             (n_data * n_dt_total, n_neurons["Ye"]), dtype=np.float16
         )
         log.info("Preparing input label rate stream {}".format(input_label_rates.shape))
-        label_spike_rates = to_categorical(data["y"], dtype=np.float16)
+        if not test_mode:
+            label_spike_rates = to_categorical(data["y"], dtype=np.float16)
+        else:
+            label_spike_rates = np.ones(n_data)
         label_spike_rates *= input_label_intensity
         for j in range(n_data):
             start = j * n_dt_total
@@ -458,16 +485,23 @@ def simulation(
             if maxDelay > 0:
                 deltaDelay = maxDelay - minDelay
                 conn.delay = "minDelay + rand() * deltaDelay"
+            weightMatrix = None
             if use_premade_weights:
-                weightMatrix = load_connections(connName, random=random_weights)
-            else:
+                try:
+                    weightMatrix = load_connections(connName, random=random_weights)
+                except FileNotFoundError:
+                    log.info(
+                        f"Requested premade {'random' if random_weights else ''} "
+                        f"weights, but none found for {connName}"
+                    )
+            if weightMatrix is None:
                 log.info("Using generated initial weight matrices")
                 weightMatrix = initial_weight_matrices[connName]
             conn.w = weightMatrix.flatten()
 
     if ee_STDP_on:
 
-        @b2.network_operation(dt=total_example_time)
+        @b2.network_operation(dt=total_example_time, order=2)
         def normalize_weights(t):
             for connName in connections:
                 if connName in stdp_conn_names:
@@ -499,7 +533,7 @@ def simulation(
         if t is None or t > 0:
             metadata.nseen += 1
 
-    @b2.network_operation(dt=total_example_time)
+    @b2.network_operation(dt=total_example_time, order=0)
     def record_cumulative_spike_counts_net_op(t):
         record_cumulative_spike_counts(t)
 
@@ -524,7 +558,7 @@ def simulation(
             spikecounts_present = spike_counts_from_cumulative(
                 csc, n_data, start=-accuracy_window
             )
-            n_spikes_present = len(spikecounts_present)
+            n_spikes_present = spikecounts_present["count"].sum()
             if n_spikes_present > 0:
                 spikerates = (
                     spikecounts_present.groupby("i")["count"].mean().astype(np.float32)
@@ -542,20 +576,23 @@ def simulation(
                     store.select(f"rates/{subpop_e}"), filename=fn, label=subpop_e
                 )
             if name in population_names:
-                spikecounts_past = spike_counts_from_cumulative(
-                    csc, n_data, end=-accuracy_window, atmost=assignments_window
-                )
-                log.debug(
-                    "Assignments based on {} spikes".format(len(spikecounts_past))
-                )
-                if name == "O":
-                    assignments = pd.DataFrame(
-                        {"label": np.arange(n_neurons[subpop_e], dtype=np.int32)}
+                if not test_mode:
+                    spikecounts_past = spike_counts_from_cumulative(
+                        csc, n_data, end=-accuracy_window, atmost=assignments_window
                     )
+                    log.debug(
+                        "Assignments based on {} spikes".format(len(spikecounts_past))
+                    )
+                    if name == "O":
+                        assignments = pd.DataFrame(
+                            {"label": np.arange(n_neurons[subpop_e], dtype=np.int32)}
+                        )
+                    else:
+                        assignments = get_assignments(spikecounts_past, labels)
+                    assignments = add_nseen_index(assignments, metadata.nseen)
+                    store.append(f"assignments/{subpop_e}", assignments)
                 else:
-                    assignments = get_assignments(spikecounts_past, labels)
-                assignments = add_nseen_index(assignments, metadata.nseen)
-                store.append(f"assignments/{subpop_e}", assignments)
+                    assignments = store.select(f"assignments/{subpop_e}")
                 if n_spikes_present == 0:
                     log.debug(
                         "No spikes in present interval - skipping accuracy estimate"
@@ -586,50 +623,54 @@ def simulation(
                         label=f"spike rate {subpop_e}",
                         nseen=metadata.nseen,
                     )
-                theta = theta_to_pandas(subpop_e, neuron_groups, metadata.nseen)
-                store.append(f"theta/{subpop_e}", theta)
-                fn = os.path.join(config.output_path, "theta-{}.pdf".format(subpop_e))
-                plot_quantity(
-                    theta,
-                    filename=fn,
-                    label=f"theta {subpop_e} (mV)",
-                    nseen=metadata.nseen,
-                )
-                fn = os.path.join(
-                    config.output_path, "theta-summary-{}.pdf".format(subpop_e)
-                )
-                plot_theta_summary(
-                    store.select(f"theta/{subpop_e}"), filename=fn, label=subpop_e
-                )
-        for conn in config.save_conns:
-            log.info(f"Saving connection {conn}")
-            conn_df = connections_to_pandas(connections[conn], metadata.nseen)
-            store.append(f"connections/{conn}", conn_df)
-        for conn in config.plot_conns:
-            log.info(f"Plotting connection {conn}")
-            subpop = conn[-2:]
-            if "O" in conn:
-                assignments = None
-            else:
-                try:
-                    assignments = store.select(
-                        f"assignments/{subpop}", where="nseen == metadata.nseen"
+                if not test_mode:
+                    theta = theta_to_pandas(subpop_e, neuron_groups, metadata.nseen)
+                    store.append(f"theta/{subpop_e}", theta)
+                    fn = os.path.join(
+                        config.output_path, "theta-{}.pdf".format(subpop_e)
                     )
-                    assignments = assignments.reset_index("nseen", drop=True)
-                except KeyError:
+                    plot_quantity(
+                        theta,
+                        filename=fn,
+                        label=f"theta {subpop_e} (mV)",
+                        nseen=metadata.nseen,
+                    )
+                    fn = os.path.join(
+                        config.output_path, "theta-summary-{}.pdf".format(subpop_e)
+                    )
+                    plot_theta_summary(
+                        store.select(f"theta/{subpop_e}"), filename=fn, label=subpop_e
+                    )
+        if not test_mode:
+            for conn in config.save_conns:
+                log.info(f"Saving connection {conn}")
+                conn_df = connections_to_pandas(connections[conn], metadata.nseen)
+                store.append(f"connections/{conn}", conn_df)
+            for conn in config.plot_conns:
+                log.info(f"Plotting connection {conn}")
+                subpop = conn[-2:]
+                if "O" in conn:
                     assignments = None
-            fn = os.path.join(config.output_path, "weights-{}.pdf".format(conn))
-            plot_weights(
-                connections[conn],
-                assignments,
-                theta=None,
-                filename=fn,
-                max_weight=None,
-                nseen=metadata.nseen,
-                output=("O" in conn),
-                feedback=("O" in conn[:2]),
-                label=conn,
-            )
+                else:
+                    try:
+                        assignments = store.select(
+                            f"assignments/{subpop}", where="nseen == metadata.nseen"
+                        )
+                        assignments = assignments.reset_index("nseen", drop=True)
+                    except KeyError:
+                        assignments = None
+                fn = os.path.join(config.output_path, "weights-{}.pdf".format(conn))
+                plot_weights(
+                    connections[conn],
+                    assignments,
+                    theta=None,
+                    filename=fn,
+                    max_weight=None,
+                    nseen=metadata.nseen,
+                    output=("O" in conn),
+                    feedback=("O" in conn[:2]),
+                    label=conn,
+                )
 
         log.debug(
             "progress took {:.3f} seconds".format(time.process_time() - starttime)
@@ -637,7 +678,7 @@ def simulation(
 
     if progress_interval > 0:
 
-        @b2.network_operation(dt=total_example_time * progress_interval)
+        @b2.network_operation(dt=total_example_time * progress_interval, order=1)
         def progress_net_op(t):
             # if t < total_example_time:
             #    return None

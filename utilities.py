@@ -10,6 +10,8 @@ from scipy import sparse
 from scipy.special import betaincinv
 import brian2 as b2
 from urllib.request import urlretrieve
+from inspect import getargvalues
+from attrdict import AttrDict
 
 import matplotlib
 
@@ -500,3 +502,33 @@ def add_colorbar(im, aspect=20, pad_fraction=0.5, **kwargs):
 
 def get_metadata(store):
     return store.root._v_attrs
+
+
+def record_arguments(frame, values):
+    args, _, _, _ = getargvalues(frame)
+    args.remove("store")
+    argdict = {}
+    for a in args:
+        argdict[a] = values[a]
+    for a, v in argdict.items():
+        log.info(f"{a}: {v}")
+    return argdict
+
+
+def create_test_store(storefilename, originalstorefilename):
+    with pd.HDFStore(
+        originalstorefilename, mode="r", complib="blosc", complevel=9
+    ) as originalstore:
+        with pd.HDFStore(
+            storefilename, mode="w", complib="blosc", complevel=9
+        ) as store:
+            for k in originalstore.root._v_attrs._v_attrnamesuser:
+                store.root._v_attrs[k] = originalstore.root._v_attrs[k]
+            nseen = originalstore["nseen"].max()
+            for k in originalstore.keys():
+                if k.startswith(("/connections", "/assignments", "/theta")):
+                    store.put(
+                        k,
+                        originalstore.select(k, where="nseen == nseen"),
+                        format="table",
+                    )
