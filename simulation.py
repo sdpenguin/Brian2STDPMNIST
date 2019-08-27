@@ -232,7 +232,7 @@ def simulation(
     config.num_classes = len(config.classes)
 
     # configuration
-    np.random.seed(1)
+    np.random.seed(0)
     modulefilename = getframeinfo(currentframe()).filename
     config.data_path = os.path.dirname(os.path.abspath(modulefilename))
     config.random_weight_path = os.path.join(config.data_path, "random/")
