@@ -11,7 +11,6 @@ from scipy.special import betaincinv
 import brian2 as b2
 from urllib.request import urlretrieve
 from inspect import getargvalues
-from attrdict import AttrDict
 
 import matplotlib
 
@@ -122,10 +121,10 @@ def plot_weights(
 ):
     log.debug(f"Plotting weights {label}")
     log.debug(f"output={output}, feedback={feedback}")
-    log.debug(f"weights = \n{weights}")
+    # log.debug(f"weights = \n{weights}")
     if isinstance(weights, b2.Synapses):
         weights = sparse.coo_matrix((weights.w, (weights.i, weights.j))).todense()
-    log.debug(f"dense weights shape = {weights.shape}")
+    # log.debug(f"dense weights shape = {weights.shape}")
     if output:
         if feedback:
             weights = weights.T
@@ -134,7 +133,7 @@ def plot_weights(
     else:
         rearranged_weights, n, m = rearrange_weights(weights)
         figsize = (8, 7)
-    log.debug(f"rearranged weights shape = {rearranged_weights.shape}")
+    # log.debug(f"rearranged weights shape = {rearranged_weights.shape}")
     fig, ax, closefig = openfig(ax, figsize=figsize)
     if max_weight is None:
         max_weight = rearranged_weights.max() * 1.1
@@ -252,9 +251,13 @@ def plot_quantity(
 def plot_accuracy(acchist, ax=None, filename=None):
     fig, ax, closefig = openfig(ax, figsize=(6, 4.5))
     i = acchist.index
-    amid, alow, ahigh = acchist.values.T
+    amid, alow, ahigh, fnull, amid_exc, alow_exc, ahigh_exc, = acchist.values.T
     ax.fill_between(i, alow, ahigh, facecolor="blue", alpha=0.5)
     ax.plot(i, amid, color="blue")
+    if (amid != amid_exc).any():
+        ax.fill_between(i, alow_exc, ahigh_exc, facecolor="red", alpha=0.25)
+        ax.plot(i, amid_exc, color="red")
+        ax.plot(i, fnull, color="green", ls="--")
     ax.set_xlabel("examples seen")
     ax.set_ylabel("accuracy (mean and 95% conf. int.)")
     ax.set_xlim(xmin=0)
@@ -319,24 +322,24 @@ def rreplace(s, old, new, occurrence=1):
 
 
 def spike_counts_from_cumulative(
-    cumulative_spike_counts, n_data, start=0, end=None, atmost=None
+    cumulative_spike_counts, n_data, n_tbin, n_neurons, start=0, end=None, atmost=None
 ):
+    log.debug("Producing spike counts from cumulative counts")
+    # log.debug(f"cumulative_spike_counts:\n{cumulative_spike_counts}")
     if isinstance(cumulative_spike_counts, pd.DataFrame):
         cumulative_spike_counts = cumulative_spike_counts.values
-    log.debug("Producing spike counts from cumulative counts")
     counts = np.diff(cumulative_spike_counts, axis=0)
-    ntbin = len(counts)
-    log.debug("Counts for {} examples".format(ntbin))
+    log.debug("Counts for {} examples".format(n_tbin))
     s = sparse.coo_matrix(counts)
     spikecounts = pd.DataFrame(
         {"tbin": s.row, "i": s.col, "count": s.data}, dtype=np.int32
     )
     if start is not None and start < 0:
-        start += ntbin
+        start += n_tbin
     if end is None:
-        end = ntbin
+        end = n_tbin
     elif end < 0:
-        end += ntbin
+        end += n_tbin
     if atmost is not None:
         if end is None:
             end = min(end, start + atmost)
@@ -346,6 +349,12 @@ def spike_counts_from_cumulative(
     spikecounts = spikecounts[spikecounts["tbin"] >= start]
     log.debug("Ending before tbin {}".format(end))
     spikecounts = spikecounts[spikecounts["tbin"] < end]
+    idx = pd.MultiIndex.from_product(
+        [np.arange(start, end), np.arange(n_neurons)], names=["tbin", "i"]
+    )
+    spikecounts = spikecounts.set_index(["tbin", "i"])
+    spikecounts = spikecounts.reindex(idx, fill_value=0)
+    spikecounts = spikecounts.reset_index()
     spikecounts["example_idx"] = spikecounts["tbin"] % n_data
     spikecounts = spikecounts.set_index(["tbin", "i"])
     return spikecounts
@@ -370,6 +379,8 @@ def get_predictions(counts, assignments, labels=None):
     predictions = predictions.reset_index("assignment")
     if labels is not None:
         predictions = predictions.join(labels, on="example_idx")
+    null = predictions["count"] == 0
+    predictions.loc[null, "assignment"] = -1
     return predictions
 
 
@@ -381,8 +392,23 @@ def get_accuracy(predictions, nseen):
         return None
     mid = 100 * k / n
     lower, upper = 100 * binom_conf_interval(k, n, conf=0.95)
+    nnull = (predictions["assignment"] == -1).sum()
+    fnull = 100 * nnull / n
+    n_exc = n - nnull
+    mid_exc = 100 * k / n_exc
+    lower_exc, upper_exc = 100 * binom_conf_interval(k, n_exc, conf=0.95)
     return pd.DataFrame(
-        {"mid": mid, "lower": lower, "upper": upper}, index=[nseen], dtype=np.float32
+        {
+            "mid": mid,
+            "lower": lower,
+            "upper": upper,
+            "fnull": fnull,
+            "mid_exc": mid_exc,
+            "lower_exc": lower_exc,
+            "upper_exc": upper_exc,
+        },
+        index=[nseen],
+        dtype=np.float32,
     )
 
 
@@ -415,8 +441,8 @@ def get_windows(nseen, progress_assignments_window, progress_accuracy_window):
     else:
         assignments_window = progress_assignments_window
         accuracy_window = progress_accuracy_window
-    log.debug("Used assignments window: {}".format(assignments_window))
-    log.debug("Used accuracy window: {}".format(accuracy_window))
+    log.info("Used assignments window: {}".format(assignments_window))
+    log.info("Used accuracy window: {}".format(accuracy_window))
     return assignments_window, accuracy_window
 
 
@@ -527,8 +553,6 @@ def create_test_store(storefilename, originalstorefilename):
             nseen = originalstore["nseen"].max()
             for k in originalstore.keys():
                 if k.startswith(("/connections", "/assignments", "/theta")):
-                    store.put(
-                        k,
-                        originalstore.select(k, where="nseen == nseen"),
-                        format="table",
-                    )
+                    data = originalstore.select(k, where="nseen == nseen")
+                    data.index.set_levels([0], level="nseen", inplace=True)
+                    store.put(k, data, format="table")

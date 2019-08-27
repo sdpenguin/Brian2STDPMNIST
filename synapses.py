@@ -17,6 +17,7 @@ class DiehlAndCookSynapses(b2.Synapses):
         stdp_on=False,
         stdp_rule="original",
         custom_namespace=None,
+        nu_factor=None,
     ):
         self.pre_conn_type = conn_type[0]
         self.post_conn_type = conn_type[1]
@@ -26,9 +27,13 @@ class DiehlAndCookSynapses(b2.Synapses):
         if stdp_on:
             self.create_stdp_namespace()
             self.create_stdp_equations()
+        if nu_factor is not None:
+            for k in self.namespace:
+                if "nu" in k:
+                    self.namespace[k] *= nu_factor
         if custom_namespace is not None:
             self.namespace.update(custom_namespace)
-        log.debug(f"Synapse namespace: {self.namespace}")
+        log.debug(f"Synapse namespace:\n{self.namespace}".replace(",", ",\n"))
         super().__init__(
             pre_neuron_group,
             post_neuron_group,
