@@ -120,7 +120,7 @@ class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
         self.refractory = "refrac_e"
 
         self.reset = "v = v_reset_e; timer = 0*ms"
-        if not self.test_mode:
+        if not self.const_theta:
             self.reset += "; theta += theta_plus_e"
 
     def initialize(self):
