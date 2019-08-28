@@ -71,10 +71,15 @@ class DiehlAndCookBaseNeuronGroup(b2.NeuronGroup):
 class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
     """Simple model of an excitatory (pyramidal) neuron"""
 
-    def __init__(self, N, const_theta=True, timer=0.1, custom_namespace=None):
+    def __init__(self, N, const_theta=True, timer=None, custom_namespace=None):
         self.N = N
         self.const_theta = const_theta
-        self.timer = timer
+        if timer is None:
+            self.timer = 0.1  # the fiducial value
+        elif timer == 0:
+            self.timer = None  # disabled
+        else:
+            self.timer = timer
         super().__init__()
         if custom_namespace is not None:
             self.namespace.update(custom_namespace)

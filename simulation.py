@@ -186,6 +186,7 @@ def simulation(
     resume=False,
     stdp_rule="original",
     custom_namespace=None,
+    timer=None,
     use_premade_weights=False,
     supervised=False,
     feedback=False,
@@ -366,6 +367,7 @@ def simulation(
         nge = neuron_groups[subpop_e] = DiehlAndCookExcitatoryNeuronGroup(
             n_neurons[subpop_e],
             const_theta=const_theta,
+            timer=timer,
             custom_namespace=neuron_namespace,
         )
         ngi = neuron_groups[subpop_i] = DiehlAndCookInhibitoryNeuronGroup(
@@ -839,9 +841,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--timer",
-        type=float_or_none,
-        default="0.1",
-        help="Modify dtimer/dt for the 'spike suppression timer'. Can be 'none' to disable timer.",
+        type=float,
+        help="Modify dtimer/dt for the 'spike suppression timer'. Can be zero to disable timer.",
     )
     parser.add_argument("--use_premade_weights", action="store_true")
     parser.add_argument(
@@ -873,6 +874,7 @@ if __name__ == "__main__":
             resume=args.resume,
             stdp_rule=args.stdp_rule,
             custom_namespace=custom_namespace_arg,
+            timer=args.timer,
             use_premade_weights=args.use_premade_weights,
             supervised=args.supervised,
             feedback=args.feedback,
