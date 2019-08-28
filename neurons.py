@@ -71,9 +71,10 @@ class DiehlAndCookBaseNeuronGroup(b2.NeuronGroup):
 class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
     """Simple model of an excitatory (pyramidal) neuron"""
 
-    def __init__(self, N, const_theta=True, custom_namespace=None):
+    def __init__(self, N, const_theta=True, timer=0.1, custom_namespace=None):
         self.N = N
         self.const_theta = const_theta
+        self.timer = timer
         super().__init__()
         if custom_namespace is not None:
             self.namespace.update(custom_namespace)
@@ -95,16 +96,17 @@ class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
         )
 
     def create_equations(self):
-        self.model += b2.Equations(
-            """
-            dtimer/dt = 0.1  : second
-            """
-        )
-        # This timer seems a bit odd: it increases more slowly than the regular
-        # simulation time, and is only used in the threshold code, to prevent spikes.
-        # It effectively increase the refractory time affecting spikes (but not dv/dt)
-        # by a factor of 10 (to biologically unrealistic values).
-        # TODO: should investigate effect of removing extended refractory period
+        if self.timer is not None:
+            self.model += b2.Equations(
+                f"""
+                dtimer/dt = {self.timer:f}  : second
+                """
+            )
+            # This timer seems a bit odd: it increases more slowly than the regular
+            # simulation time, and is only used in the threshold code, to prevent spikes.
+            # It effectively increase the refractory time affecting spikes (but not dv/dt)
+            # by a factor of 10 (to biologically unrealistic values).
+            # TODO: should investigate effect of removing extended refractory period
         self.model = b2.Equations(
             str(self.model), v_rest="v_rest_e", tau="tau_e", v_eqm_synI="v_eqm_synI_e"
         )
@@ -113,13 +115,15 @@ class DiehlAndCookExcitatoryNeuronGroup(DiehlAndCookBaseNeuronGroup):
         else:
             self.model += b2.Equations("dtheta/dt = -theta / tc_theta  : volt")
 
-        self.threshold = (
-            "(v > (theta - theta_init + v_thresh_e)) and (timer > refrac_e)"
-        )
+        self.threshold = "v > (theta - theta_init + v_thresh_e)"
+        if self.timer is not None:
+            self.threshold = f"({self.threshold}) and (timer > refrac_e)"
 
         self.refractory = "refrac_e"
 
-        self.reset = "v = v_reset_e; timer = 0*ms"
+        self.reset = "v = v_reset_e"
+        if self.timer is not None:
+            self.reset += "; timer = 0*ms"
         if not self.const_theta:
             self.reset += "; theta += theta_plus_e"
 
