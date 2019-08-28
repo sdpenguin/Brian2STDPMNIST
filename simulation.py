@@ -180,7 +180,7 @@ def simulation(
     progress_interval=None,
     progress_assignments_window=None,
     progress_accuracy_window=None,
-    record_spikes=False,
+    record_spikes=True,
     permute_data=False,
     size=400,
     resume=False,
@@ -427,6 +427,11 @@ def simulation(
         spike_monitors[subpop_e] = b2.SpikeMonitor(nge, record=record_spikes)
         spike_monitors[subpop_i] = b2.SpikeMonitor(ngi, record=record_spikes)
 
+        log.debug(f"Creating state monitors for {name}")
+        state_monitors[subpop_e] = b2.StateMonitor(
+            nge, variables=True, record=range(0, n_neurons[subpop_e], 10)
+        )
+
     if test_mode:
         # make output neurons more sensitive
         neuron_groups["Oe"].theta = 5.0 * b2.mV  # TODO: refine
@@ -519,6 +524,12 @@ def simulation(
                 log.info("Using generated initial weight matrices")
                 weightMatrix = initial_weight_matrices[connName]
             conn.w = weightMatrix.flatten()
+            log.debug(f"Creating state monitors for {connName}")
+            state_monitors[connName] = b2.StateMonitor(
+                conn,
+                variables=True,
+                record=range(0, n_neurons[preName] * n_neurons[postName], 100),
+            )
 
     if ee_STDP_on:
 
@@ -541,6 +552,22 @@ def simulation(
                     conn.w = connweights.flatten()
 
         network_operations.append(normalize_weights)
+
+    def record_detailed_state(t=None):
+        for name in population_names + input_population_names:
+            subpop_e = name + "e"
+            count = pd.DataFrame(
+                spike_monitors[subpop_e].count[:][None, :], index=[metadata.nseen]
+            )
+            count = count.rename_axis("tbin")
+            count = count.rename_axis("neuron", axis="columns")
+            store.append(f"cumulative_spike_counts/{subpop_e}", count)
+
+    @b2.network_operation(dt=total_example_time, order=0)
+    def record_cumulative_spike_counts_net_op(t):
+        record_cumulative_spike_counts(t)
+
+    network_operations.append(record_cumulative_spike_counts_net_op)
 
     def record_cumulative_spike_counts(t=None):
         if t is None or t > 0:
