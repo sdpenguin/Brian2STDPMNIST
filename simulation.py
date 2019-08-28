@@ -187,6 +187,7 @@ def simulation(
     stdp_rule="original",
     custom_namespace=None,
     timer=None,
+    tc_theta=None,
     use_premade_weights=False,
     supervised=False,
     feedback=False,
@@ -358,6 +359,8 @@ def simulation(
         subpop_i = name + "i"
         const_theta = False
         neuron_namespace = {}
+        if name == "A" and tc_theta is not None:
+            neuron_namespace["tc_theta"] = tc_theta * b2.ms
         if test_mode:
             const_theta = True
             if name == "O":
@@ -831,6 +834,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--custom_namespace",
+        "--synapse_namespace",
         type=str,
         default="{}",
         help=(
@@ -839,6 +843,7 @@ if __name__ == "__main__":
             'for example: \'{"tar": 0.1, "mu": 2.0}\'.'
         ),
     )
+    parser.add_argument("--tc_theta", type=float, help="The theta time constant")
     parser.add_argument(
         "--timer",
         type=float,
@@ -875,6 +880,7 @@ if __name__ == "__main__":
             stdp_rule=args.stdp_rule,
             custom_namespace=custom_namespace_arg,
             timer=args.timer,
+            tc_theta=args.tc_theta,
             use_premade_weights=args.use_premade_weights,
             supervised=args.supervised,
             feedback=args.feedback,
