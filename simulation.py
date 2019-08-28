@@ -56,6 +56,7 @@ from utilities import (
     plot_weights,
     record_arguments,
     create_test_store,
+    float_or_none,
 )
 
 from neurons import DiehlAndCookExcitatoryNeuronGroup, DiehlAndCookInhibitoryNeuronGroup
@@ -835,6 +836,12 @@ if __name__ == "__main__":
             "This should be given as a dictionary, surrounded by quotes, "
             'for example: \'{"tar": 0.1, "mu": 2.0}\'.'
         ),
+    )
+    parser.add_argument(
+        "--timer",
+        type=float_or_none,
+        default="0.1",
+        help="Modify dtimer/dt for the 'spike suppression timer'. Can be 'none' to disable timer.",
     )
     parser.add_argument("--use_premade_weights", action="store_true")
     parser.add_argument(

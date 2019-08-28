@@ -556,3 +556,8 @@ def create_test_store(storefilename, originalstorefilename):
                     data = originalstore.select(k, where="nseen == nseen")
                     data.index.set_levels([0], level="nseen", inplace=True)
                     store.put(k, data, format="table")
+
+
+def float_or_none(x):
+    if not (x is None or x.lower() == "none"):
+        return float(x)
