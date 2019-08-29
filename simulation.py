@@ -553,22 +553,6 @@ def simulation(
 
         network_operations.append(normalize_weights)
 
-    def record_detailed_state(t=None):
-        for name in population_names + input_population_names:
-            subpop_e = name + "e"
-            count = pd.DataFrame(
-                spike_monitors[subpop_e].count[:][None, :], index=[metadata.nseen]
-            )
-            count = count.rename_axis("tbin")
-            count = count.rename_axis("neuron", axis="columns")
-            store.append(f"cumulative_spike_counts/{subpop_e}", count)
-
-    @b2.network_operation(dt=total_example_time, order=0)
-    def record_cumulative_spike_counts_net_op(t):
-        record_cumulative_spike_counts(t)
-
-    network_operations.append(record_cumulative_spike_counts_net_op)
-
     def record_cumulative_spike_counts(t=None):
         if t is None or t > 0:
             metadata.nseen += 1
