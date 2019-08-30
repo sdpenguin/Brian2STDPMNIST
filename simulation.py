@@ -422,6 +422,13 @@ def simulation(
                 log.info("Using generated initial weight matrices")
                 weightMatrix = initial_weight_matrices[connName]
             conn.w = weightMatrix.flatten()
+            log.debug(f"Creating spike monitors for {connName}")
+            state_monitors[connName] = b2.StateMonitor(
+                conn,
+                variables=True,
+                record=range(0, n_neurons[preName] * n_neurons[postName], 10),
+                dt=5 * b2.ms,
+            )
 
         log.debug(f"Creating spike monitors for {name}")
         spike_monitors[subpop_e] = b2.SpikeMonitor(nge, record=record_spikes)
@@ -431,7 +438,9 @@ def simulation(
         state_monitors[subpop_e] = b2.StateMonitor(
             nge, variables=True, record=range(0, n_neurons[subpop_e], 10), dt=5 * b2.ms
         )
-
+        state_monitors[subpop_i] = b2.StateMonitor(
+            ngi, variables=True, record=range(0, n_neurons[subpop_i], 10), dt=5 * b2.ms
+        )
     if test_mode:
         # make output neurons more sensitive
         neuron_groups["Oe"].theta = 5.0 * b2.mV  # TODO: refine
