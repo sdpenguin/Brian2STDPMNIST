@@ -429,7 +429,7 @@ def simulation(
 
         log.debug(f"Creating state monitors for {name}")
         state_monitors[subpop_e] = b2.StateMonitor(
-            nge, variables=True, record=range(0, n_neurons[subpop_e], 10), dt=50 * b2.ms
+            nge, variables=True, record=range(0, n_neurons[subpop_e], 10), dt=5 * b2.ms
         )
 
     if test_mode:
@@ -529,7 +529,7 @@ def simulation(
                 conn,
                 variables=True,
                 record=range(0, n_neurons[preName] * n_neurons[postName], 100),
-                dt=50 * b2.ms,
+                dt=5 * b2.ms,
             )
 
     if ee_STDP_on:
