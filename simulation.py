@@ -718,19 +718,22 @@ def simulation(
                     feedback=("O" in conn[:2]),
                     label=conn,
                 )
-            saveobj = {
-                "spike_monitors": {
-                    km: vm.get_states() for km, vm in spike_monitors.items()
-                },
-                "state_monitors": {
-                    km: vm.get_states() for km, vm in state_monitors.items()
-                },
-                "labels": data["y"],
-                "total_example_time": total_example_time,
-                "dt": b2.defaultclock.dt,
-            }
-            with open(os.path.join(config.output_path, "saved.pickle"), "wb") as f:
-                pickle.dump(saveobj, f)
+
+            for km, vm in spike_monitors.items():
+                states = vm.get_states()
+                with open(
+                    os.path.join(config.output_path, f"saved-spikemonitor-{km}.pickle"),
+                    "wb",
+                ) as f:
+                    pickle.dump(saveobj, f)
+
+            for km, vm in state_monitors.items():
+                states = vm.get_states()
+                with open(
+                    os.path.join(config.output_path, f"saved-statemonitor-{km}.pickle"),
+                    "wb",
+                ) as f:
+                    pickle.dump(saveobj, f)
 
         log.debug(
             "progress took {:.3f} seconds".format(time.process_time() - starttime)
@@ -781,13 +784,11 @@ def simulation(
         save_connections(connections)
 
     saveobj = {
-        "spike_monitors": {km: vm.get_states() for km, vm in spike_monitors.items()},
-        "state_monitors": {km: vm.get_states() for km, vm in state_monitors.items()},
         "labels": data["y"],
         "total_example_time": total_example_time,
         "dt": b2.defaultclock.dt,
     }
-    with open(os.path.join(config.output_path, "saved.pickle"), "wb") as f:
+    with open(os.path.join(config.output_path, "saved-info.pickle"), "wb") as f:
         pickle.dump(saveobj, f)
 
 
