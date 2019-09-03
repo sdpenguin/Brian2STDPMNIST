@@ -426,7 +426,7 @@ def simulation(
             state_monitors[connName] = b2.StateMonitor(
                 conn,
                 variables=True,
-                record=range(0, n_neurons[preName] * n_neurons[postName], 10),
+                record=range(0, n_neurons[preName] * n_neurons[postName], 100),
                 dt=5 * b2.ms,
             )
 
@@ -436,10 +436,16 @@ def simulation(
 
         log.debug(f"Creating state monitors for {name}")
         state_monitors[subpop_e] = b2.StateMonitor(
-            nge, variables=True, record=range(0, n_neurons[subpop_e], 10), dt=5 * b2.ms
+            nge,
+            variables=True,
+            record=range(0, n_neurons[subpop_e], 10),
+            dt=0.5 * b2.ms,
         )
         state_monitors[subpop_i] = b2.StateMonitor(
-            ngi, variables=True, record=range(0, n_neurons[subpop_i], 10), dt=5 * b2.ms
+            ngi,
+            variables=True,
+            record=range(0, n_neurons[subpop_i], 10),
+            dt=0.5 * b2.ms,
         )
     if test_mode:
         # make output neurons more sensitive
@@ -537,7 +543,7 @@ def simulation(
             state_monitors[connName] = b2.StateMonitor(
                 conn,
                 variables=True,
-                record=range(0, n_neurons[preName] * n_neurons[postName], 100),
+                record=range(0, n_neurons[preName] * n_neurons[postName], 1000),
                 dt=5 * b2.ms,
             )
 
