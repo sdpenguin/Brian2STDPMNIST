@@ -725,7 +725,7 @@ def simulation(
                     os.path.join(config.output_path, f"saved-spikemonitor-{km}.pickle"),
                     "wb",
                 ) as f:
-                    pickle.dump(saveobj, f)
+                    pickle.dump(states, f)
 
             for km, vm in state_monitors.items():
                 states = vm.get_states()
@@ -733,7 +733,7 @@ def simulation(
                     os.path.join(config.output_path, f"saved-statemonitor-{km}.pickle"),
                     "wb",
                 ) as f:
-                    pickle.dump(saveobj, f)
+                    pickle.dump(states, f)
 
         log.debug(
             "progress took {:.3f} seconds".format(time.process_time() - starttime)
