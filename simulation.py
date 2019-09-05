@@ -56,7 +56,6 @@ from utilities import (
     plot_weights,
     record_arguments,
     create_test_store,
-    float_or_none,
 )
 
 from neurons import DiehlAndCookExcitatoryNeuronGroup, DiehlAndCookInhibitoryNeuronGroup
@@ -180,7 +179,7 @@ def simulation(
     progress_interval=None,
     progress_assignments_window=None,
     progress_accuracy_window=None,
-    record_spikes=True,
+    record_spikes=False,
     permute_data=False,
     size=400,
     resume=False,
@@ -192,6 +191,7 @@ def simulation(
     supervised=False,
     feedback=False,
     profile=False,
+    clock=None,
     store=None,
     **kwargs,
 ):
@@ -277,7 +277,9 @@ def simulation(
     # set parameters and equations
     # -------------------------------------------------------------------------
     # log.info('Original defaultclock.dt = {}'.format(str(b2.defaultclock.dt)))
-    b2.defaultclock.dt = 0.5 * b2.ms
+    if clock is None:
+        clock = 0.5
+    b2.defaultclock.dt = clock * b2.ms
     log.info("defaultclock.dt = {}".format(str(b2.defaultclock.dt)))
 
     n_neurons = {
@@ -885,6 +887,11 @@ if __name__ == "__main__":
         "--feedback", action="store_true", help="Enable feedback in supervised training"
     )
     parser.add_argument("--profile", action="store_true")
+    parser.add_argument(
+        "--clock",
+        type=float,
+        help="The simulation resolution in milliseconds (default 0.5)",
+    )
 
     args = parser.parse_args()
 
@@ -913,5 +920,6 @@ if __name__ == "__main__":
             supervised=args.supervised,
             feedback=args.feedback,
             profile=args.profile,
+            clock=args.clock,
         )
     )
