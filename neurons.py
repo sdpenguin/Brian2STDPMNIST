@@ -61,7 +61,7 @@ class DiehlAndCookBaseNeuronGroup(b2.NeuronGroup):
             """
             dv/dt = ((v_rest - v) + (I_synE + I_synI) / nS) / tau  : volt (unless refractory)
             I_synE = ge * nS * (v_eqm_synE - v)  : amp
-            I_synI = gi * nS * (v_eqm_synI - v)  : amp
+            I_synI = gi * nS * clip(v_eqm_synI - v, -100 * volt, 0 * mV)  : amp
             dge/dt = -ge / tau_ge  : 1
             dgi/dt = -gi / tau_gi  : 1
             """
