@@ -117,10 +117,8 @@ class DiehlAndCookSynapses(b2.Synapses):
             # NOTES:
             # * the sign of the weight pre-synaptic weight update
             #   appears to be wrong compared to PG06
-            # * the use of post2before appears unnecessary
             self.model += b2.Equations(
                 """
-                post2before  : 1
                 dpre/dt = -pre/(tc_pre_ee)  : 1 (event-driven)
                 dpost1/dt  = -post1/(tc_post_1_ee)  : 1 (event-driven)
                 dpost2/dt  = -post2/(tc_post_2_ee)  : 1 (event-driven)
@@ -131,8 +129,7 @@ class DiehlAndCookSynapses(b2.Synapses):
                 w = clip(w + nu_ee_pre * post1, 0, wmax_ee)
                 """
             self.post_eqn += """
-                post2before = post2
-                w = clip(w + nu_ee_post * pre * post2before, 0, wmax_ee)
+                w = clip(w + nu_ee_post * pre * post2, 0, wmax_ee)
                 post1 = 1.
                 post2 = 1.
                 """
