@@ -362,6 +362,8 @@ def simulation(
         neuron_namespace = {}
         if name == "A" and tc_theta is not None:
             neuron_namespace["tc_theta"] = tc_theta * b2.ms
+        if name == "O":
+            neuron_namespace["tc_theta"] = 1e6 * b2.ms
         if test_mode:
             const_theta = True
             if name == "O":
