@@ -180,6 +180,7 @@ def simulation(
     progress_assignments_window=None,
     progress_accuracy_window=None,
     record_spikes=False,
+    monitoring=False,
     permute_data=False,
     size=400,
     resume=False,
@@ -428,14 +429,15 @@ def simulation(
         log.debug(f"Creating spike monitors for {name}")
         spike_monitors[subpop_e] = b2.SpikeMonitor(nge, record=record_spikes)
         spike_monitors[subpop_i] = b2.SpikeMonitor(ngi, record=record_spikes)
+        if monitoring:
+            log.debug(f"Creating state monitors for {name}")
+            state_monitors[subpop_e] = b2.StateMonitor(
+                nge,
+                variables=True,
+                record=range(0, n_neurons[subpop_e], 10),
+                dt=0.5 * b2.ms,
+            )
 
-        log.debug(f"Creating state monitors for {name}")
-        state_monitors[subpop_e] = b2.StateMonitor(
-            nge,
-            variables=True,
-            record=range(0, n_neurons[subpop_e], 10),
-            dt=0.5 * b2.ms,
-        )
     if test_mode:
         # make output neurons more sensitive
         neuron_groups["Oe"].theta = 5.0 * b2.mV  # TODO: refine
@@ -528,13 +530,14 @@ def simulation(
                 log.info("Using generated initial weight matrices")
                 weightMatrix = initial_weight_matrices[connName]
             conn.w = weightMatrix.flatten()
-            log.debug(f"Creating state monitors for {connName}")
-            state_monitors[connName] = b2.StateMonitor(
-                conn,
-                variables=True,
-                record=range(0, n_neurons[preName] * n_neurons[postName], 1000),
-                dt=5 * b2.ms,
-            )
+            if monitoring:
+                log.debug(f"Creating state monitors for {connName}")
+                state_monitors[connName] = b2.StateMonitor(
+                    conn,
+                    variables=True,
+                    record=range(0, n_neurons[preName] * n_neurons[postName], 1000),
+                    dt=5 * b2.ms,
+                )
 
     if ee_STDP_on:
 
@@ -713,22 +716,26 @@ def simulation(
                     feedback=("O" in conn[:2]),
                     label=conn,
                 )
+            if monitoring:
+                for km, vm in spike_monitors.items():
+                    states = vm.get_states()
+                    with open(
+                        os.path.join(
+                            config.output_path, f"saved-spikemonitor-{km}.pickle"
+                        ),
+                        "wb",
+                    ) as f:
+                        pickle.dump(states, f)
 
-            for km, vm in spike_monitors.items():
-                states = vm.get_states()
-                with open(
-                    os.path.join(config.output_path, f"saved-spikemonitor-{km}.pickle"),
-                    "wb",
-                ) as f:
-                    pickle.dump(states, f)
-
-            for km, vm in state_monitors.items():
-                states = vm.get_states()
-                with open(
-                    os.path.join(config.output_path, f"saved-statemonitor-{km}.pickle"),
-                    "wb",
-                ) as f:
-                    pickle.dump(states, f)
+                for km, vm in state_monitors.items():
+                    states = vm.get_states()
+                    with open(
+                        os.path.join(
+                            config.output_path, f"saved-statemonitor-{km}.pickle"
+                        ),
+                        "wb",
+                    ) as f:
+                        pickle.dump(states, f)
 
         log.debug(
             "progress took {:.3f} seconds".format(time.process_time() - starttime)
@@ -838,6 +845,16 @@ if __name__ == "__main__":
     parser.add_argument("--assignments_window", type=int, default=None)
     parser.add_argument("--accuracy_window", type=int, default=None)
     parser.add_argument("--record_spikes", action="store_true")
+    parser.add_argument(
+        "--monitoring",
+        action="store_true",
+        help=(
+            "Turn on detailed monitoring of spikes and states. "
+            "These are pickled and saved each progress interval. "
+            "Use with caution: this greatly slows down the "
+            "simulation and vastly increases memory usage."
+        ),
+    )
     parser.add_argument("--permute_data", action="store_true")
     parser.add_argument(
         "--size",
@@ -897,6 +914,9 @@ if __name__ == "__main__":
 
     custom_namespace_arg = json.loads(args.custom_namespace.replace("'", '"'))
 
+    if args.monitoring:
+        args.record_spikes = True
+
     sys.exit(
         main(
             test_mode=args.test_mode,
@@ -909,6 +929,7 @@ if __name__ == "__main__":
             progress_assignments_window=args.assignments_window,
             progress_accuracy_window=args.accuracy_window,
             record_spikes=args.record_spikes,
+            monitoring=args.monitoring,
             permute_data=args.permute_data,
             size=args.size,
             resume=args.resume,
