@@ -32,7 +32,6 @@ import time
 import datetime
 from inspect import currentframe, getframeinfo
 import json
-import shutil
 
 from utilities import (
     get_matrix_from_file,
@@ -60,9 +59,6 @@ from utilities import (
 
 from neurons import DiehlAndCookExcitatoryNeuronGroup, DiehlAndCookInhibitoryNeuronGroup
 from synapses import DiehlAndCookSynapses
-
-from IPython import embed
-
 
 # b2.set_device('cpp_standalone', build_on_run=False)  # cannot use with network operations
 # b2.prefs.codegen.target = 'numpy'  # faster startup, but slower iterations
