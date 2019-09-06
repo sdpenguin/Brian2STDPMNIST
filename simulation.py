@@ -281,6 +281,7 @@ def simulation(
     if clock is None:
         clock = 0.5
     b2.defaultclock.dt = clock * b2.ms
+    metadata["dt"] = b2.defaultclock.dt
     log.info("defaultclock.dt = {}".format(str(b2.defaultclock.dt)))
 
     n_neurons = {
@@ -297,6 +298,7 @@ def simulation(
     resting_time = 0.15 * b2.second
     total_example_time = single_example_time + resting_time
     runtime = num_examples * total_example_time
+    metadata["total_example_time"] = total_example_time
 
     input_population_names = ["X"]
     population_names = ["A"]
@@ -784,14 +786,6 @@ def simulation(
         record_cumulative_spike_counts()
         save_theta(population_names, neuron_groups)
         save_connections(connections)
-
-    saveobj = {
-        "labels": data["y"],
-        "total_example_time": total_example_time,
-        "dt": b2.defaultclock.dt,
-    }
-    with open(os.path.join(config.output_path, "saved-info.pickle"), "wb") as f:
-        pickle.dump(saveobj, f)
 
 
 if __name__ == "__main__":
