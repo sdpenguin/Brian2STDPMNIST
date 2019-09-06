@@ -911,6 +911,9 @@ if __name__ == "__main__":
     if args.monitoring:
         args.record_spikes = True
 
+    if args.feedback:
+        args.supervised = True
+
     sys.exit(
         main(
             test_mode=args.test_mode,
