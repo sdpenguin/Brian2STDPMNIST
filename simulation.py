@@ -438,7 +438,7 @@ def simulation(
                 dt=0.5 * b2.ms,
             )
 
-    if test_mode:
+    if test_mode and supervised:
         # make output neurons more sensitive
         neuron_groups["Oe"].theta = 5.0 * b2.mV  # TODO: refine
 
