@@ -107,7 +107,13 @@ def get_initial_weights(n):
     matrices = {}
     npr = np.random.RandomState(9728364)
     # for neuron group A
+    # This weight is set so that an Ae spike guarantees a corresponding Ai spike
     matrices["AeAi"] = np.eye(n["Ae"]) * 10.4
+    # This weight is set so that an Ai spike results in a drop in all the
+    # corresponding Ae membrane potentials equal to approx the difference between
+    # their threshold and reset potentials. This acts to prevent any other neurons
+    # from firing, enforcing sparsity. If less sparsity is preferred, e.g. in the
+    # case of multiple layers, then one could try reducing this weight.
     matrices["AiAe"] = 17.0 * (1 - np.eye(n["Ae"]))
     matrices["XeAe"] = npr.uniform(0.003, 0.303, (n["Xe"], n["Ae"]))
     # XeAi connections not currently used but this is how they appear to be
@@ -184,6 +190,7 @@ def simulation(
     custom_namespace=None,
     timer=None,
     tc_theta=None,
+    total_input_weight=None,
     use_premade_weights=False,
     supervised=False,
     feedback=False,
@@ -305,8 +312,12 @@ def simulation(
     recurrent_conntype_names = ["ei_rec", "ie_rec"]
     stdp_conn_names = ["XeAe"]
 
+    # TODO: add --dc15 option
     total_weight = {}
-    total_weight["XeAe"] = 78.0  # i.e. n_neurons["Xe"] / 10.0
+    if total_input_weight is None:
+        total_weight["XeAe"] = n_neurons["Xe"] / 10.0  # standard dc15 value was 78.0
+    else:
+        total_weight["XeAe"] = total_input_weight
 
     theta_init = {}
 
@@ -882,6 +893,16 @@ if __name__ == "__main__":
             'for example: \'{"tar": 0.1, "mu": 2.0}\'.'
         ),
     )
+    parser.add_argument(
+        "--total_input_weight",
+        type=float,
+        help=(
+            "The total weight of input synapses into each neuron, "
+            "enforced by normalisation after each example. "
+            "Default is the number of input neurons divided by 10, "
+            "which is very close to the DC15 value of 78.0."
+        ),
+    )
     parser.add_argument("--tc_theta", type=float, help="The theta time constant")
     parser.add_argument(
         "--timer",
@@ -902,6 +923,12 @@ if __name__ == "__main__":
         help="The simulation resolution in milliseconds (default 0.5)",
     )
 
+    parser.add_argument(
+        "--dc15",
+        type=float,
+        help="Set all options to reproduce DC15 as closely as possible",
+    )
+
     args = parser.parse_args()
 
     custom_namespace_arg = json.loads(args.custom_namespace.replace("'", '"'))
@@ -911,6 +938,18 @@ if __name__ == "__main__":
 
     if args.feedback:
         args.supervised = True
+
+    if args.dc15:
+        dc15_options = dict(
+            permute_data=False,
+            stdp_rule="original",
+            timer=10.0,
+            tc_theta=1.0e7,
+            total_input_weight=78.0,
+            use_premade_weights=True,
+        )
+        for k, v in dc15_options:
+            args["k"] = v
 
     sys.exit(
         main(
@@ -932,6 +971,7 @@ if __name__ == "__main__":
             custom_namespace=custom_namespace_arg,
             timer=args.timer,
             tc_theta=args.tc_theta,
+            total_input_weight=args.total_input_weight,
             use_premade_weights=args.use_premade_weights,
             supervised=args.supervised,
             feedback=args.feedback,
