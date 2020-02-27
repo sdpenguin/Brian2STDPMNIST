@@ -1,21 +1,41 @@
-# Brian 2 version source code for paper "Unsupervised Learning of Digit recognition using STDP"
+# Learning with STDP
 
-This small project is to translate Brian 1 code from Paper "Unsupervised learning of digit recognition using spike-timing-dependent plasticity" written by PU Diehl to Brian 2 version. 
+## Overview
 
+This repository contains code for an on-going project to explore learning in spiking neural networks using local STDP-based learning rules. This project builds upon work presented in the paper by [Diehl & Cook (2015) "Unsupervised Learning of Digit recognition using STDP"](https://doi.org/10.3389/fncom.2015.00099). The code in this repo was originally based on the [original Brian code accompanying that paper](https://github.com/peter-u-diehl/stdp-mnist), subsequently [reimplemented for Brian 2 by zxzhijia](https://github.com/zxzhijia/Brian2STDPMNIST). The code in this repo has been modified for Python 3 and substantially refactored to aid understanding, robustness and flexibility, in preparation further development.
 
-## Prerequisite
-1. Brian 2 
-2. MNIST datasets, which can be downloaded from http://yann.lecun.com/exdb/mnist/. 
-   * The data set includes four gz files. Extract them after you downloaded them.
+A first goal was to simply to understand the code and reproduce the results from Diehl & Cook (2015) – both the example supplied in the original code, as well as the other results presented in the paper regarding network size and different learning rules.
 
-## Testing with pretrained weights:
+Subsequent goals include:
+* exploring the resiliance of the trained SNN to noise (with comparison to more conventional ANNs),
+* implementing supervised/associative learning (mostly done, but requiring further work),
+* exploring the benefit of incorprating feedback connections,
+* exploring the potential for training deeper networks,
+* attempting to reduce the level of parameter-tuning required in the model,
+* applying the model to more challenging datasets,
+* and using this model as the basis for a range of further studies.
 
-1. Run the main file "Diehl&Cook_spiking_MNIST_Brian2.py". It might take hours depending on your computer 
-2. After the previous step is finished, evaluate it by running "Diehl&Cook_MNIST_evaluation.py".
+The initial part of this work was performed in collaboration with two MSci project students, Alexander Coles and Leam Howe.
 
-## Training a new network:
+## Using the code
+This code is not yet intended for consumption by others and there is no additional documentation. I provide no assurances as to its performance. However, in the spirit of open science and open software, you are welcome to use it, providing you attribute the author in any subsequent code distribution or publications. I would also be grateful if you let me know! I aim to provide a more official licence and bibliographic reference here soon.
 
-1. modify the main file "Diehl&Cook_spiking_MNIST_Brian2.py" by changing line 214 to "test_mode=False" and run the code. 
-2. The trained weights will be stored in the folder "weights", which can be used to test the performance.
-3. In order to test your training, change line 214 back to "test_mode=True". 
-4. Run the "Diehl&Cook_spiking_MNIST_Brian2.py" code to get the results. 
+A `brian2` environment, including all dependencies, can be created using [conda](https://conda.io/):
+```shell
+conda env create -f environment.yml
+```
+
+A test using pre-trained weights (intended to reproduce that of the original Brian 1 code), may be achieved by running:
+```shell
+simulation.py --test
+```
+
+The corresponding example of training the weights from scratch is available by running:
+```shell
+simulation.py --train
+```
+
+Further usage information can be obtained via:
+```shell
+simulation.py --help
+```
