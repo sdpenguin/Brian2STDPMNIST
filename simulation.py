@@ -15,7 +15,7 @@ https://github.com/bamford/Brian2STDPMNIST
 """
 
 # conda create -y -n brian2 python=3
-# conda install -y -n brian2 -c conda-forge numpy scipy matplotlib brian2 pandas ipython
+# conda install -y -n brian2 -c conda-forge numpy scipy matplotlib brian2 pandas ipython pytables
 
 import logging
 
@@ -166,6 +166,7 @@ def main(**kwargs):
     log.addHandler(fh)
     storefilename = os.path.join(outputpath, f"store{suffix}.h5")
     if kwargs["test_mode"]:
+        # TODO: MAKE THIS WORK WITH ORIGINAL DC15 WEIGHTS
         originalstorefilename = os.path.join(outputpath, f"store.h5")
         create_test_store(storefilename, originalstorefilename)
         mode = "a"
