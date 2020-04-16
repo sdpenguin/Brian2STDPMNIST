@@ -926,7 +926,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--dc15",
-        type=float,
+        action="store_true",
         help="Set all options to reproduce DC15 as closely as possible",
     )
 
