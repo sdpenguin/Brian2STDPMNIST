@@ -950,7 +950,7 @@ if __name__ == "__main__":
             use_premade_weights=True,
         )
         for k, v in dc15_options.items():
-            args["k"] = v
+            setattr(args, k, v)
 
     sys.exit(
         main(
