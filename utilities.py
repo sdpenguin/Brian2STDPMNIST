@@ -430,14 +430,20 @@ def get_windows(nseen, progress_assignments_window, progress_accuracy_window):
         log.debug(
             "Fewer examples have been seen than required for the requested progress windows."
         )
-        log.debug(
-            "Discarding first 20% of available examples to avoid initial contamination."
-        )
-        log.debug("Dividing remaining examples in proportion to requested windows.")
-        assignments_window = int(
-            0.8 * nseen * progress_assignments_window / progress_window
-        )
-        accuracy_window = int(0.8 * nseen * progress_accuracy_window / progress_window)
+        if progress_assignments_window > 0:
+            log.debug(
+                "Discarding first 20% of available examples to avoid initial contamination."
+            )
+            log.debug("Dividing remaining examples in proportion to requested windows.")
+            assignments_window = int(
+                0.8 * nseen * progress_assignments_window / progress_window
+            )
+            accuracy_window = int(
+                0.8 * nseen * progress_accuracy_window / progress_window
+            )
+        else:
+            # if requested accuracy window is zero, then implies test mode: use all seen
+            accuracy_window = nseen
     else:
         assignments_window = progress_assignments_window
         accuracy_window = progress_accuracy_window
