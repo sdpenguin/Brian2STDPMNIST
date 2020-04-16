@@ -442,7 +442,8 @@ def get_windows(nseen, progress_assignments_window, progress_accuracy_window):
                 0.8 * nseen * progress_accuracy_window / progress_window
             )
         else:
-            # if requested accuracy window is zero, then implies test mode: use all seen
+            # if requested assignments window is zero, then implies test mode: use all seen
+            assignments_window = 0
             accuracy_window = nseen
     else:
         assignments_window = progress_assignments_window
