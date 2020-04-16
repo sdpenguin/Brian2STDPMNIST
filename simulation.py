@@ -949,7 +949,7 @@ if __name__ == "__main__":
             total_input_weight=78.0,
             use_premade_weights=True,
         )
-        for k, v in dc15_options:
+        for k, v in dc15_options.items():
             args["k"] = v
 
     sys.exit(
