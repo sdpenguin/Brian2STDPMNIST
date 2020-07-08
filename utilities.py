@@ -25,13 +25,13 @@ import pandas as pd
 from IPython import embed
 
 
-def get_labeled_data():
+def get_labeled_data(data_path):
     log.info("Loading MNIST data")
     origin_folder = "https://storage.googleapis.com/tensorflow/tf-keras-datasets/"
     filename = "mnist.npz"
-    localfilename = os.path.join("data", filename)
+    localfilename = os.path.join(data_path, filename)
     if not os.path.exists(localfilename):
-        os.makedirs("data", exist_ok=True)
+        os.makedirs(data_path, exist_ok=True)
         urlretrieve(origin_folder + filename, localfilename)
     with np.load(localfilename) as f:
         training = {"x": f["x_train"], "y": f["y_train"]}

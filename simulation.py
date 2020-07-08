@@ -235,7 +235,7 @@ def simulation(
     log.info("=======================")
 
     # load MNIST
-    training, testing = get_labeled_data()
+    training, testing = get_labeled_data(kwargs["data"])
     config.classes = np.unique(training["y"])
     config.num_classes = len(config.classes)
 
@@ -823,7 +823,10 @@ if __name__ == "__main__":
         help="Name of output folder, if none given defaults to date and time.",
     )
     parser.add_argument(
-        "--output", type=str, default="./runs/", help="Parent path for output folder"
+        "--output", type=str, default="~/Data/SNN/Brian2STDPMNIST/runs/", help="Parent path for output folder"
+    )
+    parser.add_argument(
+        "--data", type=str, default="~/datasets/mnist", help="Path to store/get the MNIST .npz file."
     )
     debug_group = parser.add_mutually_exclusive_group(required=False)
     debug_group.add_argument(
@@ -934,6 +937,9 @@ if __name__ == "__main__":
 
     custom_namespace_arg = json.loads(args.custom_namespace.replace("'", '"'))
 
+    args.data = os.path.expanduser(args.data)
+    args.output = os.path.expanduser(args.output)
+
     if args.monitoring:
         args.record_spikes = True
 
@@ -957,6 +963,7 @@ if __name__ == "__main__":
             test_mode=args.test_mode,
             runname=args.runname,
             output=args.output,
+            data=args.data,
             debug=args.debug,
             clobber=args.clobber,
             num_epochs=args.num_epochs,
