@@ -134,45 +134,45 @@ def get_initial_weights(n):
     return matrices
 
 
-def main(**kwargs):
-    if kwargs["runname"] is None:
-        if kwargs["resume"]:
+def main(args):
+    if args.runname is None:
+        if args.resume:
             print(f"Must provide runname to resume")
             exit(2)
-        kwargs["runname"] = datetime.datetime.now().replace(microsecond=0).isoformat()
-    outputpath = os.path.join(kwargs["output"], kwargs["runname"])
+        args.runname = datetime.datetime.now().replace(microsecond=0).isoformat()
+    outputpath = os.path.join(args.output, args.runname)
     try:
         os.makedirs(
             outputpath,
-            exist_ok=(kwargs["clobber"] or kwargs["resume"] or kwargs["test_mode"]),
+            exist_ok=(args.clobber or args.resume or args.test_mode), # Allow existence only if any of these flags are True
         )
     except (OSError, FileExistsError):
         print(f"Refusing to overwrite existing output files in {outputpath}")
         print(f"Use --clobber to force overwriting")
         exit(8)
     suffix = ""
-    if kwargs["test_mode"]:
+    if args.test_mode:
         mode = "w"
         suffix = "_test"
-    elif kwargs["resume"]:
+    elif args.resume:
         mode = "a"
     else:
         mode = "w"
     logfilename = os.path.join(outputpath, f"output{suffix}.log")
     fh = logging.FileHandler(logfilename, mode)
-    fh.setLevel(logging.DEBUG if kwargs["debug"] else logging.INFO)
+    fh.setLevel(logging.DEBUG if args.debug else logging.INFO)
     formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
     fh.setFormatter(formatter)
     log.addHandler(fh)
     storefilename = os.path.join(outputpath, f"store{suffix}.h5")
-    if kwargs["test_mode"]:
+    if args.test_mode:
         # TODO: MAKE THIS WORK WITH ORIGINAL DC15 WEIGHTS
         originalstorefilename = os.path.join(outputpath, f"store.h5")
         create_test_store(storefilename, originalstorefilename)
         mode = "a"
     with pd.HDFStore(storefilename, mode=mode, complib="blosc", complevel=9) as store:
-        kwargs["store"] = store
-        simulation(**kwargs)
+        args.store = store
+        simulation(**vars(args)) # Expand the values of args in dictionary form
 
 
 def simulation(
@@ -958,32 +958,4 @@ if __name__ == "__main__":
         for k, v in dc15_options.items():
             setattr(args, k, v)
 
-    sys.exit(
-        main(
-            test_mode=args.test_mode,
-            runname=args.runname,
-            output=args.output,
-            data=args.data,
-            debug=args.debug,
-            clobber=args.clobber,
-            num_epochs=args.num_epochs,
-            progress_interval=args.progress_interval,
-            progress_assignments_window=args.assignments_window,
-            progress_accuracy_window=args.accuracy_window,
-            record_spikes=args.record_spikes,
-            monitoring=args.monitoring,
-            permute_data=args.permute_data,
-            size=args.size,
-            resume=args.resume,
-            stdp_rule=args.stdp_rule,
-            custom_namespace=custom_namespace_arg,
-            timer=args.timer,
-            tc_theta=args.tc_theta,
-            total_input_weight=args.total_input_weight,
-            use_premade_weights=args.use_premade_weights,
-            supervised=args.supervised,
-            feedback=args.feedback,
-            profile=args.profile,
-            clock=args.clock,
-        )
-    )
+    sys.exit(main(args))
