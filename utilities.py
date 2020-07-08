@@ -548,12 +548,14 @@ def record_arguments(frame, values):
     return argdict
 
 
-def create_test_store(storefilename, originalstorefilename):
+def create_test_store(store_file_name, original_store_file_name):
+    if not os.path.exists(original_store_file_name):
+        raise ValueError('File {} does not exist. Please try training first.'.format(original_store_file_name))
     with pd.HDFStore(
-        originalstorefilename, mode="r", complib="blosc", complevel=9
+        original_store_file_name, mode="r", complib="blosc", complevel=9
     ) as originalstore:
         with pd.HDFStore(
-            storefilename, mode="w", complib="blosc", complevel=9
+            store_file_name, mode="w", complib="blosc", complevel=9
         ) as store:
             for k in originalstore.root._v_attrs._v_attrnamesuser:
                 store.root._v_attrs[k] = originalstore.root._v_attrs[k]
