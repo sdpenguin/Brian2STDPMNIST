@@ -132,6 +132,7 @@ def simulation(
     np.random.seed(0) # For consistency
 
     #### Initialise Metadata ####
+
     metadata = store.root._v_attrs # Access the store metadata
     for x in config.__dict__: setattr(metadata, x, getattr(config, x))
     if not resume:
@@ -139,6 +140,7 @@ def simulation(
         metadata.nprogress = 0
 
     #### Log Configuration ####
+
     log.info("Brian2STDPMNIST/simulation.py")
     log.info("Arguments =============")
     log.info("{} : {}".format(key, getattr(metadata, key)) for key in metadata)
@@ -151,6 +153,7 @@ def simulation(
         log.info("Training run {}".format(runname))
 
     #### Get MNIST Data ####
+
     training, testing = get_labeled_data(config.data_path)
     classes = np.unique(training["y"])
     num_classes = len(classes)
@@ -172,9 +175,8 @@ def simulation(
         data["x"] = data["x"][:n_data]
         data["y"] = data["y"][:n_data]
 
-    # -------------------------------------------------------------------------
-    # set parameters and equations
-    # -------------------------------------------------------------------------
+    #### Set parameters and Equations ####
+
     log.info('Original defaultclock.dt = {}'.format(str(b2.defaultclock.dt)))
     b2.defaultclock.dt = clock * b2.ms
     metadata["dt"] = b2.defaultclock.dt
