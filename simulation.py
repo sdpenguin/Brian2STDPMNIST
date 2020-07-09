@@ -231,9 +231,8 @@ def simulation(config, store):
         # make output neurons more sensitive
         neuron_groups["Oe"].theta = 5.0 * b2.mV  # TODO: refine
 
-    # -------------------------------------------------------------------------
-    # create TimedArray of rates for input examples
-    # -------------------------------------------------------------------------
+    #### Create TimedArray of Rates for Input Examples ####
+
     input_rates = np.zeros((config.n_data * config.n_dt_total, config.n_neurons["Xe"]), dtype=np.float16)
     log.info("Preparing input rate stream {}".format(input_rates.shape))
     for j in range(config.n_data):
@@ -245,9 +244,8 @@ def simulation(config, store):
     stimulus_X = b2.TimedArray(input_rates, dt=config.input_dt)
     total_data_time = config.n_data * config.n_dt_total * config.input_dt
 
-    # -------------------------------------------------------------------------
-    # create TimedArray of rates for input labels
-    # -------------------------------------------------------------------------
+    #### Create TimedArray of Rates for Input Labels ####
+
     if "Y" in config.input_population_names:
         input_label_rates = np.zeros(
             (config.n_data * config.n_dt_total, config.n_neurons["Ye"]), dtype=np.float16
@@ -264,9 +262,8 @@ def simulation(config, store):
         input_label_rates = input_label_rates * b2.Hz
         stimulus_Y = b2.TimedArray(input_label_rates, dt=config.input_dt)
 
-    # -------------------------------------------------------------------------
-    # create input population and connections from input populations
-    # -------------------------------------------------------------------------
+    #### Create Input Population and Connections from Input Populations ####
+
     for k, name in enumerate(config.input_population_names):
         subpop_e = name + "e"
         # stimulus is repeated for duration of simulation
