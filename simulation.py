@@ -8,10 +8,13 @@ Brian2 version created by Xu Zhang
 GitHub updated 2016-09-13
 https://github.com/zxzhijia/Brian2STDPMNIST
 
-This version created by Steven P. Bamford
+Python3 version and refactoring by Steven P. Bamford
 https://github.com/bamford/Brian2STDPMNIST
 
-@author: Steven P. Bamford
+This version by Waleed El-Geresy
+https://github.com/sdpenguin/Brian2STDPMNIST
+
+@author: Waleed El-Geresy
 """
 
 # conda create -y -n brian2 python=3
