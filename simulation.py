@@ -44,7 +44,6 @@ from utilities import (
     save_theta,
     get_matrix_from_file,
     connections_to_file,
-    get_metadata,
     get_labeled_data,
     to_categorical,
     get_labels,
@@ -127,7 +126,7 @@ def simulation(
     clock=None,
     **kwargs,
 ):
-    metadata = get_metadata(store)
+    metadata = store.root._v_attrs
     if not resume:
         metadata.nseen = 0
         metadata.nprogress = 0

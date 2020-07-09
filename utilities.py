@@ -734,10 +734,6 @@ def add_colorbar(im, aspect=20, pad_fraction=0.5, **kwargs):
     return im.axes.figure.colorbar(im, cax=cax, **kwargs)
 
 
-def get_metadata(store):
-    return store.root._v_attrs
-
-
 def record_arguments(frame, values):
     ''' Get a dictionary containing current arguments. '''
     args, _, _, _ = getargvalues(frame)
