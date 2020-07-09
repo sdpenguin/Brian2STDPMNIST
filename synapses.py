@@ -9,6 +9,11 @@ import brian2 as b2
 class DiehlAndCookSynapses(b2.Synapses):
     """Simple model of a synapse between two excitatory neurons with STDP"""
 
+    namespace = {}
+
+    eqns = "w : 1"
+    replacements = {}
+
     def __init__(
         self,
         pre_neuron_group,
@@ -22,17 +27,13 @@ class DiehlAndCookSynapses(b2.Synapses):
         self.pre_conn_type = conn_type[0]
         self.post_conn_type = conn_type[1]
         self.stdp_rule = stdp_rule
-        self.namespace = {}
-        self.create_equations()
-        if stdp_on:
-            self.create_stdp_namespace()
-            self.create_stdp_equations()
+        self.create_model()
+        self.update_model(stdp_on)
+        self.update_namespace(stdp_on, custom_namespace=custom_namespace)
         if nu_factor is not None:
             for k in self.namespace:
                 if "nu" in k:
                     self.namespace[k] *= nu_factor
-        if custom_namespace is not None:
-            self.namespace.update(custom_namespace)
         log.debug(f"Synapse namespace:\n{self.namespace}".replace(",", ",\n"))
         super().__init__(
             pre_neuron_group,
@@ -43,74 +44,15 @@ class DiehlAndCookSynapses(b2.Synapses):
             namespace=self.namespace,
         )
 
-    def create_equations(self):
-        self.model = b2.Equations("w : 1")
+    def create_model(self, eqns=eqns, replacements=replacements):
+        self.model = b2.Equations(eqns, **replacements)
+
+    def update_model(self, stdp_on):
         self.pre_eqn = "g{}_post += w".format(self.pre_conn_type)
         self.post_eqn = ""
-
-    def create_stdp_namespace(self):
-        if self.stdp_rule == "original":
-            self.namespace = {
-                "tc_pre_ee": 20 * b2.ms,
-                "tc_post_1_ee": 20 * b2.ms,
-                "tc_post_2_ee": 40 * b2.ms,
-                "nu_ee_pre": 0.0001,
-                "nu_ee_post": 0.01,
-                "wmax_ee": 1.0,
-            }
-        elif self.stdp_rule == "minimal-triplet":
-            # use values corresponding to DC15 model
-            # which approximate those from PG06
-            self.namespace = {
-                "tc_pre": 20 * b2.ms,
-                "tc_post1": 20 * b2.ms,
-                "tc_post2": 40 * b2.ms,
-                "nu_pair_pre": 0.0001,
-                "nu_triple_post": 0.01,
-                "wmax": 1.0,
-            }
-        elif self.stdp_rule == "full-triplet":
-            # these values taken from nearest-spike, visual-cortex model of PG06
-            self.namespace = {
-                "tc_pre1": 16.8 * b2.ms,
-                "tc_pre2": 714 * b2.ms,
-                "tc_post1": 33.7 * b2.ms,
-                "tc_post2": 40 * b2.ms,
-                "nu_pair_pre": 6.6e-3,
-                "nu_triple_pre": 3.1e-3,
-                "nu_pair_post": 8.8e-11,
-                "nu_triple_post": 5.3e-2,
-                "wmax": 1.0,
-            }
-        elif self.stdp_rule == "powerlaw":
-            self.namespace = {
-                "tc_pre": 20 * b2.ms,
-                "nu": 0.01,
-                "wmax": 1.0,
-                "tar": 0.5,  # complete guess!
-                "mu": 3.0,  # complete guess!
-            }
-        elif self.stdp_rule == "exponential":
-            self.namespace = {
-                "tc_pre": 20 * b2.ms,
-                "nu": 0.01,
-                "wmax": 1.0,
-                "tar": 0.5,  # complete guess!
-                "beta": 3.0,  # from Querlioz et al. (2013, doi:10.1109/TNANO.2013.2250995)
-            }
-        elif self.stdp_rule == "symmetric":
-            self.namespace = {
-                "tc_pre": 20 * b2.ms,
-                "tc_post": 20 * b2.ms,
-                "nu_pre": 0.0001,
-                "nu_post": 0.01,
-                "wmax": 1.0,
-                "tar": 0.5,  # complete guess!
-                "mu": 3.0,  # complete guess!
-            }
-
-    def create_stdp_equations(self):
-        if self.stdp_rule == "original":
+        if not stdp_on:
+            pass
+        elif self.stdp_rule == "original":
             # original code from Diehl & Cooke (2015) repository
             # An implementation of the nearest-spike minimal triplet
             # model of Pfister & Gerstner (2006)
@@ -193,7 +135,7 @@ class DiehlAndCookSynapses(b2.Synapses):
                 post1 = 1.0
                 post2 = 1.0
                 """
-        if self.stdp_rule == "powerlaw":
+        elif self.stdp_rule == "powerlaw":
             # inferred code from Diehl & Cooke (2015)
             self.model += b2.Equations(
                 """
@@ -206,7 +148,7 @@ class DiehlAndCookSynapses(b2.Synapses):
             self.post_eqn += """
                 w = clip(w + nu * (pre - tar) * (wmax - w)**mu, 0, wmax)
                 """
-        if self.stdp_rule == "exponential":
+        elif self.stdp_rule == "exponential":
             # inferred code from Diehl & Cooke (2015)
             self.model += b2.Equations(
                 """
@@ -219,7 +161,7 @@ class DiehlAndCookSynapses(b2.Synapses):
             self.post_eqn += """
                 w = clip(w + nu * (pre * exp(-beta * w) - tar * exp(-beta * (wmax - w))), 0, wmax)
                 """
-        if self.stdp_rule == "symmetric":
+        elif self.stdp_rule == "symmetric":
             # inferred code from Diehl & Cooke (2015)
             self.model += b2.Equations(
                 """
@@ -236,9 +178,75 @@ class DiehlAndCookSynapses(b2.Synapses):
                  w = clip(w + nu_post * (pre - tar) * (wmax - w)**mu, 0, wmax)
                  post = post + 1.0
                  """
-        if self.stdp_rule == "clopath2010":
+        elif self.stdp_rule == "clopath2010":
             # TODO: try Clopath et al. 2010 rule
             # not in DC15, but would be nice to try this sometime:
             # spike-timing dependent plasticity perhaps more bio-physically
             # mediated by the post-synaptic membrane voltage
+            raise NotImplementedError()
+
+    def update_namespace(self, stdp_on, custom_namespace=None):
+        if not stdp_on:
             pass
+        elif self.stdp_rule == "original":
+            self.namespace = {
+                "tc_pre_ee": 20 * b2.ms,
+                "tc_post_1_ee": 20 * b2.ms,
+                "tc_post_2_ee": 40 * b2.ms,
+                "nu_ee_pre": 0.0001,
+                "nu_ee_post": 0.01,
+                "wmax_ee": 1.0,
+            }
+        elif self.stdp_rule == "minimal-triplet":
+            # use values corresponding to DC15 model
+            # which approximate those from PG06
+            self.namespace = {
+                "tc_pre": 20 * b2.ms,
+                "tc_post1": 20 * b2.ms,
+                "tc_post2": 40 * b2.ms,
+                "nu_pair_pre": 0.0001,
+                "nu_triple_post": 0.01,
+                "wmax": 1.0,
+            }
+        elif self.stdp_rule == "full-triplet":
+            # these values taken from nearest-spike, visual-cortex model of PG06
+            self.namespace = {
+                "tc_pre1": 16.8 * b2.ms,
+                "tc_pre2": 714 * b2.ms,
+                "tc_post1": 33.7 * b2.ms,
+                "tc_post2": 40 * b2.ms,
+                "nu_pair_pre": 6.6e-3,
+                "nu_triple_pre": 3.1e-3,
+                "nu_pair_post": 8.8e-11,
+                "nu_triple_post": 5.3e-2,
+                "wmax": 1.0,
+            }
+        elif self.stdp_rule == "powerlaw":
+            self.namespace = {
+                "tc_pre": 20 * b2.ms,
+                "nu": 0.01,
+                "wmax": 1.0,
+                "tar": 0.5,  # complete guess!
+                "mu": 3.0,  # complete guess!
+            }
+        elif self.stdp_rule == "exponential":
+            self.namespace = {
+                "tc_pre": 20 * b2.ms,
+                "nu": 0.01,
+                "wmax": 1.0,
+                "tar": 0.5,  # complete guess!
+                "beta": 3.0,  # from Querlioz et al. (2013, doi:10.1109/TNANO.2013.2250995)
+            }
+        elif self.stdp_rule == "symmetric":
+            self.namespace = {
+                "tc_pre": 20 * b2.ms,
+                "tc_post": 20 * b2.ms,
+                "nu_pre": 0.0001,
+                "nu_post": 0.01,
+                "wmax": 1.0,
+                "tar": 0.5,  # complete guess!
+                "mu": 3.0,  # complete guess!
+            }
+        
+        if (custom_namespace is not None) and (custom_namespace != {}):
+            self.namespace.update(custom_namespace)
