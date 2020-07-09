@@ -39,15 +39,15 @@ class Config(object):
     clobber = None
     num_epochs = None
     progress_interval = None # The interval at which to run the progress() function
-    progress_assignments_window = None # assignments_window
-    progress_accuracy_window = None # accuracy_window
+    progress_assignments_window = None # Number of training examples?
+    progress_accuracy_window = None # Number of testing examples?
     record_spikes = None
     monitoring = None
     permute_data = None # Randomly shuffle the training or testing data
-    size = None
+    size = 400 # Requested size of the neuron population (hidden)
     resume = None # Resume a previous run
     stdp_rule = None
-    custom_namespace = ""
+    synapse_namespace = None
     total_input_weight = None
     tc_theta = None
     use_premade_weights = None
@@ -61,25 +61,49 @@ class Config(object):
     output_path = None # Location to store output
     timer = None
     store = None
-    custom_namespace = None
     logfile_name = None
     # Custom configuration Parameters
     classes = None # MNIST data classes
     num_classes = None # Number of data classes
     random_weight_path = None # Location to store random data
     results_path = None # Path to store results
-    # Connections
-    input_population_names = None
-    population_names = None
-    connection_names = None
-    save_conns = None # Connections to save
-    plot_conns = None # Connections to plot
-    forward_conntype_names = None
-    recurrent_conntype_names = None
-    stdp_conn_names = None
     random_weights = None
     ee_STDP_on = None
-
+    # Connections
+    input_population_names = ["X"]
+    population_names = ["A"]
+    connection_names = ["XA"]
+    save_conns = ["XeAe"] # Connections to save
+    plot_conns = ["XeAe"] # Connections to plot
+    forward_conntype_names = ["ee"]
+    recurrent_conntype_names = ["ei_rec", "ie_rec"]
+    stdp_conn_names = ["XeAe"]
+    # Times
+    single_example_time = 0.35 * b2.second # Time to simulate a single example
+    resting_time = 0.15 * b2.second # Time to wait in between simulations
+    total_example_time = None # Total time for an example
+    runtime = None
+    input_dt = 50 * b2.ms
+    n_dt_example = None # Number of dt in an example
+    # Data parameters
+    num_classes = None
+    n_input = None # Shape of the input
+    n_data = None # Number of data points
+    n_dt_rest = None
+    n_dt_total = None
+    num_examples = None # Number of examples to train or test on (n_data*num_epochs)
+    # Simulation Parameters
+    n_neurons = {}
+    delay = {
+        "ee" : (0 * b2.ms, 10 * b2.ms),
+        "ei" : (0 * b2.ms, 5 * b2.ms),
+        "ei_rec" : (0 * b2.ms, 0 * b2.ms),
+        "ie_rec" : (0 * b2.ms, 0 * b2.ms)
+    }
+    total_weight = {}
+    theta_init = {}
+    input_intensity = 2.0
+    input_label_intensity = None
 
     def __init__(self, passed_args=None):
         ''' Initialise the configuration object with properties.
@@ -166,21 +190,108 @@ class Config(object):
         if self.clock is None:
             self.clock = 0.5
 
+        self.total_example_time = self.single_example_time + self.resting_time # Total time for an example
+        self.n_dt_example = int(round(self.single_example_time / self.input_dt))
+
+        self.n_dt_rest = int(round(self.resting_time / self.input_dt))
+        self.n_dt_total = int(self.n_dt_example + self.n_dt_rest)
+
+        if self.test_mode:
+            self.input_label_intensity = 0.0
+        else:
+            self.input_label_intensity = 10.0
+
+    def add_data_params(self, dataset):
+        ''' Update the configuration with the Dataset dependent parameters. '''
+        self.num_classes = dataset.num_classes
+        self.n_input = dataset.n_input
+        self.n_data = dataset.n_data
+        self.num_examples = dataset.num_examples
+
+        self.n_neurons = {
+            "Ae": self.size,
+            "Ai": self.size,
+            "Oe": self.num_classes,
+            "Oi": self.num_classes,
+            "Xe": self.n_input,
+            "Ye": self.num_classes,
+        }
+
+        if self.total_input_weight is None:
+            self.total_weight["XeAe"] = self.n_neurons["Xe"] / 10.0  # standard dc15 value was 78.0
+        else:
+            self.total_weight["XeAe"] = self.total_input_weight
+
+        self.runtime = self.num_examples * self.total_example_time
+
+        if self.supervised:
+            self.input_population_names += ["Y"]
+            self.population_names += ["O"]
+            self.connection_names += ["YO", "AO"]
+            self.save_conns += ["YeOe", "AeOe"]
+            self.plot_conns += ["AeOe"]
+            self.stdp_conn_names += ["AeOe"]
+            self.total_weight["AeOe"] = self.n_neurons["Ae"] / 5.0  # TODO: refine?
+            self.theta_init["O"] = 15.0 * b2.mV
+
+        if self.feedback:
+            self.connection_names += ["OA"]
+            self.save_conns += ["OeAe"]
+            self.plot_conns += ["OeAe"]
+            self.stdp_conn_names += ["OeAe"]
+            self.total_weight["OeAe"] = self.n_neurons["Oe"] / 5.0  # TODO: refine?
+
 
 #### Load Numpy Data ####
 
-def get_labeled_data(data_path):
-    log.info("Loading MNIST data")
-    origin_folder = "https://storage.googleapis.com/tensorflow/tf-keras-datasets/"
-    filename = "mnist.npz"
-    localfilename = os.path.join(data_path, filename)
-    if not os.path.exists(localfilename):
-        os.makedirs(data_path, exist_ok=True)
-        urlretrieve(origin_folder + filename, localfilename)
-    with np.load(localfilename) as f:
-        training = {"x": f["x_train"], "y": f["y_train"]}
-        testing = {"x": f["x_test"], "y": f["y_test"]}
-    return training, testing
+class Dataset(object):
+
+    data = None # Relevant data, either training or test
+    testing = None
+    training = None
+    classes = None # Classes present in the data
+    num_classes = None
+
+    n_input = None # Shape of the input
+    n_data = None # Number of data points
+    num_examples = None # Number of examples to train or test on (n_data*num_epochs)
+
+    def __init__(self, config):
+        training, testing = self.get_labeled_data(config.data_path)
+        self.classes = np.unique(training["y"])
+        self.num_classes = len(self.classes)
+        if config.test_mode:
+            self.data = testing
+        else:
+            self.data = training
+
+        if config.permute_data:
+            np.random.seed(0) # For consistency
+            sample = np.random.permutation(len(config.data["y"]))
+            self.data["x"] = self.data["x"][sample]
+            self.data["y"] = self.data["y"][sample]
+
+        self.n_input = self.data["x"][0].size
+        self.n_data = self.data["y"].size
+        self.num_examples = int(self.n_data) * config.num_epochs
+
+        if config.num_epochs < 1: # If training for only a portion of the dataset
+            self.n_data = int(np.ceil(n_data * config.num_epochs))
+            self.data["x"] = self.data["x"][:n_data]
+            self.data["y"] = self.data["y"][:n_data]
+
+    def get_labeled_data(self, data_path):
+        log.info("Loading MNIST data")
+        origin_folder = "https://storage.googleapis.com/tensorflow/tf-keras-datasets/"
+        filename = "mnist.npz"
+        localfilename = os.path.join(data_path, filename)
+        if not os.path.exists(localfilename):
+            os.makedirs(data_path, exist_ok=True)
+            urlretrieve(origin_folder + filename, localfilename)
+        with np.load(localfilename) as f:
+            training = {"x": f["x_train"], "y": f["y_train"]}
+            testing = {"x": f["x_test"], "y": f["y_test"]}
+        return training, testing
 
 #### Load and Save Connection Weights ####
 
@@ -654,24 +765,17 @@ def get_labels(data):
 
 
 def get_windows(nseen, progress_assignments_window, progress_accuracy_window):
+    ''' Returns the number of examples for the progress assignment window. '''
     log.debug("Requested assignments window: {}".format(progress_assignments_window))
     log.debug("Requested accuracy window: {}".format(progress_accuracy_window))
     progress_window = progress_assignments_window + progress_accuracy_window
     if progress_window > nseen:
-        log.debug(
-            "Fewer examples have been seen than required for the requested progress windows."
-        )
+        log.debug("Fewer examples have been seen than required for the requested progress windows.")
         if progress_assignments_window > 0:
-            log.debug(
-                "Discarding first 20% of available examples to avoid initial contamination."
-            )
-            log.debug("Dividing remaining examples in proportion to requested windows.")
-            assignments_window = int(
-                0.8 * nseen * progress_assignments_window / progress_window
-            )
-            accuracy_window = int(
-                0.8 * nseen * progress_accuracy_window / progress_window
-            )
+            log.debug("Discarding first 20% of available examples to avoid initial contamination.") # TODO: Why?
+            log.debug("Dividing remaining 80% in proportion to requested windows.")
+            assignments_window = int(0.8 * nseen * progress_assignments_window / progress_window)
+            accuracy_window = int(0.8 * nseen * progress_accuracy_window / progress_window)
         else:
             # if requested assignments window is zero, then implies test mode: use all seen
             assignments_window = 0

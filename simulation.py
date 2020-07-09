@@ -37,6 +37,7 @@ import json
 
 from utilities import (
     Config,
+    Dataset,
     load_connections,
     save_connections,
     get_initial_weights,
@@ -44,7 +45,6 @@ from utilities import (
     save_theta,
     get_matrix_from_file,
     connections_to_file,
-    get_labeled_data,
     to_categorical,
     get_labels,
     get_windows,
@@ -98,44 +98,21 @@ def main(config):
         create_test_store(store_filename, os.path.join(config.run_path, f"store.h5"))
         mode = "a"
     with pd.HDFStore(store_filename, mode=mode, complib="blosc", complevel=9) as store:
-        simulation(config, store, **config.__dict__) # Expand the values of args in dictionary form
+        simulation(config, store)
 
 
-def simulation(
-    config,
-    store,
-    test_mode=True,
-    runname=None,
-    num_epochs=None,
-    progress_interval=None,
-    progress_assignments_window=None,
-    progress_accuracy_window=None,
-    record_spikes=False,
-    monitoring=False,
-    permute_data=False,
-    size=400,
-    resume=False,
-    stdp_rule="original",
-    custom_namespace=None,
-    timer=None,
-    tc_theta=None,
-    total_input_weight=None,
-    use_premade_weights=False,
-    supervised=False,
-    feedback=False,
-    profile=False,
-    clock=None,
-    random_weights=False,
-    ee_STDP_on=False,
-    **kwargs,
-):
-    np.random.seed(0) # For consistency
+def simulation(config, store):
+    #### Load Training/Testing Data and Apply Configuration###
 
-    #### Initialise Metadata ####
+    dataset = Dataset(config)
+    config.add_data_params(dataset)
+    data = dataset.data
+
+    #### Initialise Metadata with Configuration ####
 
     metadata = store.root._v_attrs # Access the store metadata
     for x in config.__dict__: setattr(metadata, x, getattr(config, x))
-    if not resume:
+    if not config.resume:
         metadata.nseen = 0
         metadata.nprogress = 0
 
@@ -145,158 +122,64 @@ def simulation(
     log.info("Arguments =============")
     log.info("{} : {}".format(key, getattr(metadata, key)) for key in metadata)
     log.info("=======================")
-    if test_mode:
-        log.info("Testing run {}".format(runname))
-    elif resume:
-        log.info("Resuming training run {}".format(runname))
+    if config.test_mode:
+        log.info("Testing run {}".format(config.runname))
+    elif config.resume:
+        log.info("Resuming training run {}".format(config.runname))
     else:
-        log.info("Training run {}".format(runname))
-
-    #### Get MNIST Data ####
-
-    training, testing = get_labeled_data(config.data_path)
-    classes = np.unique(training["y"])
-    num_classes = len(classes)
-    if test_mode:
-        data = testing
-    else:
-        data = training
-
-    if permute_data:
-        sample = np.random.permutation(len(data["y"]))
-        data["x"] = data["x"][sample]
-        data["y"] = data["y"][sample]
-
-    num_examples = int(len(data["y"]) * num_epochs)
-    n_input = data["x"][0].size
-    n_data = data["y"].size
-    if num_epochs < 1:
-        n_data = int(np.ceil(n_data * num_epochs))
-        data["x"] = data["x"][:n_data]
-        data["y"] = data["y"][:n_data]
-
-    #### Set parameters and Equations ####
+        log.info("Training run {}".format(config.runname))
 
     log.info('Original defaultclock.dt = {}'.format(str(b2.defaultclock.dt)))
-    b2.defaultclock.dt = clock * b2.ms
+    b2.defaultclock.dt = config.clock * b2.ms
     metadata["dt"] = b2.defaultclock.dt
     log.info("defaultclock.dt = {}".format(str(b2.defaultclock.dt)))
 
-    n_neurons = {
-        "Ae": size,
-        "Ai": size,
-        "Oe": num_classes,
-        "Oi": num_classes,
-        "Xe": n_input,
-        "Ye": num_classes,
-    }
-    metadata["n_neurons"] = n_neurons
+    #### Create Network Population and Recurrent Connections ####
 
-    single_example_time = 0.35 * b2.second
-    resting_time = 0.15 * b2.second
-    total_example_time = single_example_time + resting_time
-    runtime = num_examples * total_example_time
-    metadata["total_example_time"] = total_example_time
-
-    config.input_population_names = ["X"]
-    config.population_names = ["A"]
-    config.connection_names = ["XA"]
-    config.save_conns = ["XeAe"]
-    config.plot_conns = ["XeAe"]
-    config.forward_conntype_names = ["ee"]
-    config.recurrent_conntype_names = ["ei_rec", "ie_rec"]
-    config.stdp_conn_names = ["XeAe"]
-
-    # TODO: add --dc15 option
-    total_weight = {}
-    if total_input_weight is None:
-        total_weight["XeAe"] = n_neurons["Xe"] / 10.0  # standard dc15 value was 78.0
-    else:
-        total_weight["XeAe"] = total_input_weight
-
-    theta_init = {}
-
-    if supervised:
-        config.input_population_names += ["Y"]
-        config.population_names += ["O"]
-        config.connection_names += ["YO", "AO"]
-        config.save_conns += ["YeOe", "AeOe"]
-        config.plot_conns += ["AeOe"]
-        config.stdp_conn_names += ["AeOe"]
-        total_weight["AeOe"] = n_neurons["Ae"] / 5.0  # TODO: refine?
-        theta_init["O"] = 15.0 * b2.mV
-
-    if feedback:
-        config.connection_names += ["OA"]
-        config.save_conns += ["OeAe"]
-        config.plot_conns += ["OeAe"]
-        config.stdp_conn_names += ["OeAe"]
-        total_weight["OeAe"] = n_neurons["Oe"] / 5.0  # TODO: refine?
-
-    delay = {}  # TODO: potentially specify by connName?
-    delay["ee"] = (0 * b2.ms, 10 * b2.ms)
-    delay["ei"] = (0 * b2.ms, 5 * b2.ms)
-    delay["ei_rec"] = (0 * b2.ms, 0 * b2.ms)
-    delay["ie_rec"] = (0 * b2.ms, 0 * b2.ms)
-
-    input_intensity = 2.0
-    if test_mode:
-        input_label_intensity = 0.0
-    else:
-        input_label_intensity = 10.0
-
-    initial_weight_matrices = get_initial_weights(n_neurons)
-
-    # TODO: put all configuration/setup variables in config object
-    #       and save to the store for future reference
-    # metadata["config"] = config
-
+    initial_weight_matrices = get_initial_weights(config.n_neurons)
     neuron_groups = {}
     connections = {}
     spike_monitors = {}
     state_monitors = {}
     network_operations = []
 
-    # -------------------------------------------------------------------------
-    # create network population and recurrent connections
-    # -------------------------------------------------------------------------
     for subgroup_n, name in enumerate(config.population_names):
         log.info(f"Creating neuron group {name}")
         subpop_e = name + "e"
         subpop_i = name + "i"
         const_theta = False
         neuron_namespace = {}
-        if name == "A" and tc_theta is not None:
-            neuron_namespace["tc_theta"] = tc_theta * b2.ms
+        if name == "A" and config.tc_theta is not None:
+            neuron_namespace["tc_theta"] = config.tc_theta * b2.ms
         if name == "O":
             neuron_namespace["tc_theta"] = 1e6 * b2.ms
-        if test_mode:
+        if config.test_mode:
             const_theta = True
             if name == "O":
                 # TODO: move to a config variable
                 neuron_namespace["tc_theta"] = 1e5 * b2.ms
                 const_theta = False
         nge = neuron_groups[subpop_e] = DiehlAndCookExcitatoryNeuronGroup(
-            n_neurons[subpop_e],
+            config.n_neurons[subpop_e],
             const_theta=const_theta,
-            timer=timer,
+            timer=config.timer,
             custom_namespace=neuron_namespace,
         )
         ngi = neuron_groups[subpop_i] = DiehlAndCookInhibitoryNeuronGroup(
-            n_neurons[subpop_i]
+            config.n_neurons[subpop_i]
         )
 
-        if not random_weights:
+        if not config.random_weights:
             theta_saved = load_theta(name, config.weight_path)
-            if len(theta_saved) != n_neurons[subpop_e]:
+            if len(theta_saved) != config.n_neurons[subpop_e]:
                 raise ValueError(
                     f"Requested size of neuron population {subpop_e} "
                     f"({n_neurons[subpop_e]}) does not match size of "
                     f"saved data ({len(theta_saved)})"
                 )
             neuron_groups[subpop_e].theta = theta_saved
-        elif name in theta_init:
-            neuron_groups[subpop_e].theta = theta_init[name]
+        elif name in config.theta_init:
+            neuron_groups[subpop_e].theta = config.theta_init[name]
 
         for connType in config.recurrent_conntype_names:
             log.info(f"Creating recurrent connections for {connType}")
@@ -307,7 +190,7 @@ def simulation(
                 neuron_groups[preName], neuron_groups[postName], conn_type=connType
             )
             conn.connect()  # all-to-all connection
-            minDelay, maxDelay = delay[connType]
+            minDelay, maxDelay = config.delay[connType]
             if maxDelay > 0:
                 deltaDelay = maxDelay - minDelay
                 conn.delay = "minDelay + rand() * deltaDelay"
@@ -319,12 +202,12 @@ def simulation(
             # TODO: these weights appear to have been tuned,
             #       we may need different values for the O layer
             weightMatrix = None
-            if use_premade_weights:
+            if config.use_premade_weights:
                 try:
-                    weightMatrix = load_connections(connName, config.random_weight_path if random_weights else config.weight_path)
+                    weightMatrix = load_connections(connName, config.random_weight_path if config.random_weights else config.weight_path)
                 except FileNotFoundError:
                     log.info(
-                        f"Requested premade {'random' if random_weights else ''} "
+                        f"Requested premade {'random' if config.random_weights else ''} "
                         f"weights, but none found for {connName}"
                     )
             if weightMatrix is None:
@@ -333,57 +216,53 @@ def simulation(
             conn.w = weightMatrix.flatten()
 
         log.debug(f"Creating spike monitors for {name}")
-        spike_monitors[subpop_e] = b2.SpikeMonitor(nge, record=record_spikes)
-        spike_monitors[subpop_i] = b2.SpikeMonitor(ngi, record=record_spikes)
-        if monitoring:
+        spike_monitors[subpop_e] = b2.SpikeMonitor(nge, record=config.record_spikes)
+        spike_monitors[subpop_i] = b2.SpikeMonitor(ngi, record=config.record_spikes)
+        if config.monitoring:
             log.debug(f"Creating state monitors for {name}")
             state_monitors[subpop_e] = b2.StateMonitor(
                 nge,
                 variables=True,
-                record=range(0, n_neurons[subpop_e], 10),
+                record=range(0, config.n_neurons[subpop_e], 10),
                 dt=0.5 * b2.ms,
             )
 
-    if test_mode and supervised:
+    if config.test_mode and config.supervised:
         # make output neurons more sensitive
         neuron_groups["Oe"].theta = 5.0 * b2.mV  # TODO: refine
 
     # -------------------------------------------------------------------------
     # create TimedArray of rates for input examples
     # -------------------------------------------------------------------------
-    input_dt = 50 * b2.ms
-    n_dt_example = int(round(single_example_time / input_dt))
-    n_dt_rest = int(round(resting_time / input_dt))
-    n_dt_total = int(n_dt_example + n_dt_rest)
-    input_rates = np.zeros((n_data * n_dt_total, n_neurons["Xe"]), dtype=np.float16)
+    input_rates = np.zeros((config.n_data * config.n_dt_total, config.n_neurons["Xe"]), dtype=np.float16)
     log.info("Preparing input rate stream {}".format(input_rates.shape))
-    for j in range(n_data):
-        spike_rates = data["x"][j].reshape(n_neurons["Xe"]) / 8
-        spike_rates *= input_intensity
-        start = j * n_dt_total
-        input_rates[start : start + n_dt_example] = spike_rates
+    for j in range(config.n_data):
+        spike_rates = data["x"][j].reshape(config.n_neurons["Xe"]) / 8
+        spike_rates *= config.input_intensity
+        start = j * config.n_dt_total
+        input_rates[start : start + config.n_dt_example] = spike_rates
     input_rates = input_rates * b2.Hz
-    stimulus_X = b2.TimedArray(input_rates, dt=input_dt)
-    total_data_time = n_data * n_dt_total * input_dt
+    stimulus_X = b2.TimedArray(input_rates, dt=config.input_dt)
+    total_data_time = config.n_data * config.n_dt_total * config.input_dt
 
     # -------------------------------------------------------------------------
     # create TimedArray of rates for input labels
     # -------------------------------------------------------------------------
     if "Y" in config.input_population_names:
         input_label_rates = np.zeros(
-            (n_data * n_dt_total, n_neurons["Ye"]), dtype=np.float16
+            (config.n_data * config.n_dt_total, config.n_neurons["Ye"]), dtype=np.float16
         )
         log.info("Preparing input label rate stream {}".format(input_label_rates.shape))
-        if not test_mode:
+        if not config.test_mode:
             label_spike_rates = to_categorical(data["y"], dtype=np.float16)
         else:
-            label_spike_rates = np.ones(n_data)
-        label_spike_rates *= input_label_intensity
-        for j in range(n_data):
-            start = j * n_dt_total
-            input_label_rates[start : start + n_dt_example] = label_spike_rates[j]
+            label_spike_rates = np.ones(config.n_data)
+        label_spike_rates *= config.input_label_intensity
+        for j in range(config.n_data):
+            start = j * config.n_dt_total
+            input_label_rates[start : start + config.n_dt_example] = label_spike_rates[j]
         input_label_rates = input_label_rates * b2.Hz
-        stimulus_Y = b2.TimedArray(input_label_rates, dt=input_dt)
+        stimulus_Y = b2.TimedArray(input_label_rates, dt=config.input_dt)
 
     # -------------------------------------------------------------------------
     # create input population and connections from input populations
@@ -393,11 +272,11 @@ def simulation(
         # stimulus is repeated for duration of simulation
         # (i.e. if there are multiple epochs)
         neuron_groups[subpop_e] = b2.PoissonGroup(
-            n_neurons[subpop_e], rates=f"stimulus_{name}(t % total_data_time, i)"
+            config.n_neurons[subpop_e], rates=f"stimulus_{name}(t % total_data_time, i)"
         )
         log.debug(f"Creating spike monitors for {name}")
         spike_monitors[subpop_e] = b2.SpikeMonitor(
-            neuron_groups[subpop_e], record=record_spikes
+            neuron_groups[subpop_e], record=config.record_spikes
         )
 
     for name in config.connection_names:
@@ -407,47 +286,46 @@ def simulation(
             preName = name[0] + connType[0]
             postName = name[1] + connType[1]
             connName = preName + postName
-            stdp_on = ee_STDP_on and connName in config.stdp_conn_names
+            stdp_on = config.ee_STDP_on and connName in config.stdp_conn_names
             nu_factor = 10.0 if name in ["AO"] else None
             conn = connections[connName] = DiehlAndCookSynapses(
                 neuron_groups[preName],
                 neuron_groups[postName],
                 conn_type=connType,
                 stdp_on=stdp_on,
-                stdp_rule=stdp_rule,
-                custom_namespace=custom_namespace,
+                stdp_rule=config.stdp_rule,
+                custom_namespace=config.synapse_namespace,
                 nu_factor=nu_factor,
             )
             conn.connect()  # all-to-all connection
-            minDelay, maxDelay = delay[connType]
+            minDelay, maxDelay = config.delay[connType]
             if maxDelay > 0:
                 deltaDelay = maxDelay - minDelay
                 conn.delay = "minDelay + rand() * deltaDelay"
             weightMatrix = None
-            if use_premade_weights:
+            if config.use_premade_weights:
                 try:
-                    weightMatrix = load_connections(connName, config.random_weight_path if random_weights else config.weight_path)
+                    weightMatrix = load_connections(connName, config.random_weight_path if config.random_weights else config.weight_path)
                 except FileNotFoundError:
                     log.info(
-                        f"Requested premade {'random' if random_weights else ''} "
+                        f"Requested premade {'random' if config.random_weights else ''} "
                         f"weights, but none found for {connName}"
                     )
             if weightMatrix is None:
                 log.info("Using generated initial weight matrices")
                 weightMatrix = initial_weight_matrices[connName]
             conn.w = weightMatrix.flatten()
-            if monitoring:
+            if config.monitoring:
                 log.debug(f"Creating state monitors for {connName}")
                 state_monitors[connName] = b2.StateMonitor(
                     conn,
                     variables=True,
-                    record=range(0, n_neurons[preName] * n_neurons[postName], 1000),
+                    record=range(0, config.n_neurons[preName] * config.n_neurons[postName], 1000),
                     dt=5 * b2.ms,
                 )
 
-    if ee_STDP_on:
-
-        @b2.network_operation(dt=total_example_time, order=1)
+    if config.ee_STDP_on:
+        @b2.network_operation(dt=config.total_example_time, order=1)
         def normalize_weights(t):
             for connName in connections:
                 if connName in config.stdp_conn_names:
@@ -461,7 +339,7 @@ def simulation(
                     colSums = connweights.sum(axis=0)
                     ok = colSums > 0
                     colFactors = np.ones_like(colSums)
-                    colFactors[ok] = total_weight[connName] / colSums[ok]
+                    colFactors[ok] = config.total_weight[connName] / colSums[ok]
                     connweights *= colFactors
                     conn.w = connweights.flatten()
 
@@ -479,7 +357,7 @@ def simulation(
             count = count.rename_axis("neuron", axis="columns")
             store.append(f"cumulative_spike_counts/{subpop_e}", count)
 
-    @b2.network_operation(dt=total_example_time, order=0)
+    @b2.network_operation(dt=config.total_example_time, order=0)
     def record_cumulative_spike_counts_net_op(t):
         record_cumulative_spike_counts(t)
 
@@ -496,14 +374,14 @@ def simulation(
         )
         metadata.nprogress += 1
         assignments_window, accuracy_window = get_windows(
-            metadata.nseen, progress_assignments_window, progress_accuracy_window
+            metadata.nseen, config.progress_assignments_window, config.progress_accuracy_window
         )
         for name in config.population_names + config.input_population_names:
             log.debug(f"Progress for population {name}")
             subpop_e = name + "e"
             csc = store.select(f"cumulative_spike_counts/{subpop_e}")
             spikecounts_present = spike_counts_from_cumulative(
-                csc, n_data, metadata.nseen, n_neurons[subpop_e], start=-accuracy_window
+                csc, config.n_data, metadata.nseen, config.n_neurons[subpop_e], start=-accuracy_window
             )
             n_spikes_present = spikecounts_present["count"].sum()
             if n_spikes_present > 0:
@@ -512,7 +390,7 @@ def simulation(
                 )
                 # this reindex no longer necessary?
                 spikerates = spikerates.reindex(
-                    np.arange(n_neurons[subpop_e]), fill_value=0
+                    np.arange(config.n_neurons[subpop_e]), fill_value=0
                 )
                 spikerates = add_nseen_index(spikerates, metadata.nseen)
                 store.append(f"rates/{subpop_e}", spikerates)
@@ -524,12 +402,12 @@ def simulation(
                     store.select(f"rates/{subpop_e}"), filename=fn, label=subpop_e
                 )
             if name in config.population_names:
-                if not test_mode:
+                if not config.test_mode:
                     spikecounts_past = spike_counts_from_cumulative(
                         csc,
-                        n_data,
+                        config.n_data,
                         metadata.nseen,
-                        n_neurons[subpop_e],
+                        config.n_neurons[subpop_e],
                         end=-accuracy_window,
                         atmost=assignments_window,
                     )
@@ -537,7 +415,7 @@ def simulation(
                     log.debug("Assignments based on {} spikes".format(n_spikes_past))
                     if name == "O":
                         assignments = pd.DataFrame(
-                            {"label": np.arange(n_neurons[subpop_e], dtype=np.int32)}
+                            {"label": np.arange(config.n_neurons[subpop_e], dtype=np.int32)}
                         )
                     else:
                         assignments = get_assignments(spikecounts_past, labels)
@@ -591,7 +469,7 @@ def simulation(
                 plot_theta_summary(
                     store.select(f"theta/{subpop_e}"), filename=fn, label=subpop_e
                 )
-        if not test_mode or metadata.nseen == 0:
+        if not config.test_mode or metadata.nseen == 0:
             ''' Save connection weights. '''
             for conn in config.save_conns:
                 log.info(f"Saving connection {conn}")
@@ -622,7 +500,7 @@ def simulation(
                     feedback=("O" in conn[:2]),
                     label=conn,
                 )
-            if monitoring:
+            if config.monitoring:
                 for km, vm in spike_monitors.items():
                     states = vm.get_states()
                     with open(
@@ -645,9 +523,8 @@ def simulation(
 
         log.debug("progress() took {:.3f} seconds".format(time.process_time() - starttime))
 
-    if progress_interval > 0:
-
-        @b2.network_operation(dt=total_example_time * progress_interval, order=2)
+    if config.progress_interval > 0:
+        @b2.network_operation(dt=config.total_example_time * config.progress_interval, order=2)
         def progress_net_op(t):
             # if t < total_example_time:
             #    return None
@@ -655,9 +532,8 @@ def simulation(
 
         network_operations.append(progress_net_op)
 
-    # -------------------------------------------------------------------------
-    # run the simulation and set inputs
-    # -------------------------------------------------------------------------
+    #### Run the Simulation and Set Inputs ####
+
     log.info("Constructing the network")
     net = b2.Network()
     for obj_list in [neuron_groups, connections, spike_monitors, state_monitors]:
@@ -669,25 +545,23 @@ def simulation(
 
     log.info("Starting simulations")
 
-    net.run(runtime, report="text", report_period=(60 * b2.second), profile=profile)
+    net.run(config.runtime, report="text", report_period=(60 * b2.second), profile=config.profile)
 
     b2.device.build(
-        directory=os.path.join("build", runname), compile=True, run=True, debug=False
+        directory=os.path.join(config.run_path, "build"), compile=True, run=True, debug=False
     )
 
-    if profile:
+    if config.profile:
         log.debug(b2.profiling_summary(net, 10))
 
-    # -------------------------------------------------------------------------
-    # save results
-    # -------------------------------------------------------------------------
+    #### Save Results ####
 
     log.info("Saving results")
     progress()
-    if not test_mode:
+    if not config.test_mode:
         record_cumulative_spike_counts()
-        save_theta(config.population_names, neuron_groups)
-        save_connections(connections)
+        save_theta(config.population_names, neuron_groups, config.weight_path)
+        save_connections(connections, config.save_conns, config.weight_path)
 
 
 if __name__ == "__main__":
