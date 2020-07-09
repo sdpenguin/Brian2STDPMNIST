@@ -79,9 +79,10 @@ def main(config):
         print(f"Use --clobber to force overwriting")
         exit(8)
     if config.test_mode:
-        mode = "w"
         suffix = "_test"
-    elif config.resume:
+    else:
+        suffix = ""
+    if config.resume:
         mode = "a"
     else:
         mode = "w"
