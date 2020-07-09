@@ -174,7 +174,7 @@ def simulation(config, store):
             if len(theta_saved) != config.n_neurons[subpop_e]:
                 raise ValueError(
                     f"Requested size of neuron population {subpop_e} "
-                    f"({n_neurons[subpop_e]}) does not match size of "
+                    f"({config.n_neurons[subpop_e]}) does not match size of "
                     f"saved data ({len(theta_saved)})"
                 )
             neuron_groups[subpop_e].theta = theta_saved

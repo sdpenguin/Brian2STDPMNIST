@@ -276,9 +276,9 @@ class Dataset(object):
         self.num_examples = int(self.n_data) * config.num_epochs
 
         if config.num_epochs < 1: # If training for only a portion of the dataset
-            self.n_data = int(np.ceil(n_data * config.num_epochs))
-            self.data["x"] = self.data["x"][:n_data]
-            self.data["y"] = self.data["y"][:n_data]
+            self.n_data = int(np.ceil(self.n_data * config.num_epochs))
+            self.data["x"] = self.data["x"][:self.n_data]
+            self.data["y"] = self.data["y"][:self.n_data]
 
     def get_labeled_data(self, data_path):
         log.info("Loading MNIST data")
