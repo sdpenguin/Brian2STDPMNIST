@@ -355,39 +355,66 @@ def connections_to_pandas(conn, nseen):
     df = df.set_index("nseen", append=True)
     return df
 
-def get_initial_weights(n):
-    ''' Initialise weights and connections. TODO: Which neuron groups?
-        n: Dictionary containing numbers of neurons
-            - Ae
-            - Oe
-            - Xe '''
-    matrices = {}
+def get_connections(n, group_in, group_out, weighting=None, type="invalid"):
+    ''' Generate a connection matrix according to the shapes of group_in and group_out,
+        as well as weighting, and type.
+        Inputs:
+        n - dictionary associating names with sizes of neuron groups
+        group_in - Pre-synaptic neuron group
+        group_out - Post-synaptic neuron group
+        weighting - Weighting (shape depends on type)
+        type - Type of connection generation method
+        Output:
+        Matrix generated according to the specifications. '''
     npr = np.random.RandomState(9728364)
-    # for neuron group A
+    choices = ["ei", "ie", "uniform", "constant", "random"]
+    if type not in choices:
+        raise ValueError('Please supply a type among {}'.format(choices))
+    if not weighting:
+        raise ValueError('Please supply a weighting for connection type {}'.format(type))
+    if type == choices[0]:
+        return np.eye(n[group_in]) * weighting
+    elif type == choices[1]:
+        return weighting * (1 - np.eye(n[group_in]))
+    elif type == choices[2]:
+        if len(weighting) != 2:
+            raise ValueError('Type "{}", requires a high and a low weight for Uniform randomisation.'.format(choices[2]))
+        return npr.uniform(low=weighting[0], high=weighting[1], size=(n[group_in], n[group_out])) # Uniformly sampled connections from the input to the hidden layer.
+    elif type == choices[3]:
+        return np.zeros((n[group_in], n[group_out])) + weighting
+    elif type == choices[4]:
+        if len(weighting) != 3:
+            raise ValueError('Type "{}", requires a low and heigh weight, and a percentage for random connection.'.format(choices[2]))
+        matrix = np.zeros((n[group_in], n[group_out]))
+        n_connect = int(weighting[2] * n[group_in] * n[group_out])
+        connect = npr.choice(n[group_in] * n[group_out], n_connect, replace=False) # Choose weighting% of connections
+        matrix.flat[connect] = npr.uniform(low=weighting[0], high=weighting[1], size=n_connect)
+        return matrix
+
+def get_initial_weights(n):
+    ''' Initialise weights and connections.
+        Inputs:
+        n - Dictionary containing numbers of neurons
+        Returns:
+        matrices - dictionary pointing to numpy arrays defining weights.
+        '''
+    matrices = {}
+    #### Unsupervised Learning: ####
     # This weight is set so that an Ae spike guarantees a corresponding Ai spike
-    matrices["AeAi"] = np.eye(n["Ae"]) * 10.4
-    # This weight is set so that an Ai spike results in a drop in all the
-    # corresponding Ae membrane potentials equal to approx the difference between
-    # their threshold and reset potentials. This acts to prevent any other neurons
-    # from firing, enforcing sparsity. If less sparsity is preferred, e.g. in the
-    # case of multiple layers, then one could try reducing this weight.
-    matrices["AiAe"] = 17.0 * (1 - np.eye(n["Ae"]))
-    matrices["XeAe"] = npr.uniform(0.003, 0.303, (n["Xe"], n["Ae"]))
-    # XeAi connections not currently used but this is how they appear to be
-    # generated from inspection of pre-made weights supplied with DC15 code
-    new = np.zeros((n["Xe"], n["Ae"]))
-    n_connect = int(0.1 * n["Xe"] * n["Ae"])
-    connect = npr.choice(n["Xe"] * n["Ae"], n_connect, replace=False)
-    new.flat[connect] = npr.uniform(0.0, 0.2, n_connect)
-    matrices["XeAi"] = new
+    matrices["AeAi"] = get_connections(n, 'Ae', 'Ai', 10.4, type='ei')
+    matrices["AiAe"] = get_connections(n, 'Ai', 'Ae', 17.0, type='ei')
+    matrices["XeAe"] = get_connections(n, 'Xe', 'Ae', [0.003, 0.303], type='uniform')
+    # XeAi connections not currently used but this is how they appear to be generated from inspection of pre-made weights supplied with DC15 code
+    matrices["XeAi"] = get_connections(n, "Xe", "Ai", [0, 0.2, 0.1], type="random")
+    #### Supervised Learning: ####
     # for neuron group O --- TODO: refine
-    matrices["OeOi"] = np.eye(n["Oe"]) * 10.4
-    matrices["OiOe"] = 17.0 * (1 - np.eye(n["Oe"]))
-    matrices["YeOe"] = np.eye(n["Oe"]) * 10.4
+    matrices["OeOi"] = get_connections(n, 'Oe', 'Oi', 10.4, type='ei')
+    matrices["OiOe"] = get_connections(n, 'Oi', 'Oe', 17.0, type='ie')
+    matrices["YeOe"] = get_connections(n, 'Ye', 'Oe', 10.4, type='ei')
     # between neuron groups A and O --- TODO: refine
-    # matrices["AeOe"] = npr.uniform(0.003, 0.303, (n["Ae"], n["Oe"]))
-    matrices["AeOe"] = np.zeros((n["Ae"], n["Oe"])) + 0.1
-    matrices["OeAe"] = np.zeros((n["Oe"], n["Ae"])) + 0.1
+    # matrices["AeOe"] = get_connections(n, 'Ae', 'Oe', [0.003, 0.303], type="uniform")
+    matrices["AeOe"] = get_connections(n, 'Ae', 'Oe', 0.1, type="constant")
+    matrices["OeAe"] = get_connections(n, 'Oe', 'Ae', 0.1, type="constant")
     return matrices
 
 #### Load and Save Theta Values ####
