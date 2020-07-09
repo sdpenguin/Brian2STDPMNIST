@@ -765,10 +765,10 @@ if __name__ == "__main__":
             "symmetric",
         ],
     )
-    parser.add_argument( "--custom_namespace", "--synapse_namespace", type=str, default="{}",
+    parser.add_argument( "--custom_namespace", "--synapse_namespace", dest="custom_namespace", type=str, default="{}",
         help=(
             "Customise the synapse namespace. "
-            "This should be given as a dictionary, surrounded by quotes, "
+            "This should be given as a dictionary, surrounded by quotes (in JSON format), "
             'for example: \'{"tar": 0.1, "mu": 2.0}\'.' # TODO: Check if this should be 'tau'?
         ),
     )

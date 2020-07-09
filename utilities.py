@@ -61,7 +61,7 @@ class Config(object):
     output_path = None # Location to store output
     timer = None
     store = None
-    custom_namespace_arg = None
+    custom_namespace = None
     logfile_name = None
     store_filename = None
     # Custom configuration Parameters
@@ -112,7 +112,7 @@ class Config(object):
             self.record_spikes = True
         if self.feedback:
             self.supervised = True
-        self.custom_namespace_arg = json.loads(self.custom_namespace.replace("'", '"'))
+        self.custom_namespace = json.loads(self.custom_namespace.replace("'", '"'))
         # The dc15 arg overrides other arguments
         if self.dc15:
             self.permute_data = False
