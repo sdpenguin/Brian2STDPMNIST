@@ -63,7 +63,6 @@ class Config(object):
     store = None
     custom_namespace = None
     logfile_name = None
-    store_filename = None
     # Custom configuration Parameters
     classes = None # MNIST data classes
     num_classes = None # Number of data classes
@@ -131,7 +130,7 @@ class Config(object):
         self.data_path = os.path.expanduser(self.data_path)
         self.run_path_parent = os.path.expanduser(self.run_path_parent)
         self.run_path = os.path.join(self.run_path_parent, self.runname)
-        self.store_filename = os.path.join(self.run_path, f"store{self.suffix}.h5")
+
         # Random weights can be fixed across multiple runs, so can be stored alongside persistent files, like the data
         self.random_weight_path = os.path.join(self.data_path, "random/")
         self.output_path = os.path.join(self.run_path, "output{}".format('_test' if self.test_mode else ''))

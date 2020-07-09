@@ -88,11 +88,12 @@ def main(config):
     formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
     fh.setFormatter(formatter)
     log.addHandler(fh)
+    store_filename = os.path.join(config.run_path, f"store{suffix}.h5")
     if config.test_mode:
         # TODO: MAKE THIS WORK WITH ORIGINAL DC15 WEIGHTS
-        create_test_store(config.store_filename, os.path.join(config.run_path, f"store.h5"))
+        create_test_store(store_filename, os.path.join(config.run_path, f"store.h5"))
         mode = "a"
-    with pd.HDFStore(config.store_filename, mode=mode, complib="blosc", complevel=9) as store:
+    with pd.HDFStore(store_filename, mode=mode, complib="blosc", complevel=9) as store:
         simulation(config, store, **config.__dict__) # Expand the values of args in dictionary form
 
 
