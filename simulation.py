@@ -29,11 +29,16 @@ import pandas as pd
 import brian2 as b2
 import pickle
 import time
-import datetime
 from inspect import currentframe, getframeinfo
 import json
 
 from utilities import (
+    Config,
+    load_connections,
+    save_connections,
+    get_initial_weights,
+    load_theta,
+    save_theta,
     get_matrix_from_file,
     connections_to_file,
     get_metadata,
@@ -63,119 +68,37 @@ from synapses import DiehlAndCookSynapses
 # b2.set_device('cpp_standalone', build_on_run=False)  # cannot use with network operations
 # b2.prefs.codegen.target = 'numpy'  # faster startup, but slower iterations
 
-
-class config:
-    # a global object to store configuration info
-    pass
-
-
-def load_connections(connName, random=True):
-    if random:
-        path = config.random_weight_path
-    else:
-        path = config.weight_path
-    filename = os.path.join(path, "{}.npy".format(connName))
-    return get_matrix_from_file(filename)
-
-
-def save_connections(connections, iteration=None):
-    for connName in config.save_conns:
-        log.info("Saving connections {}".format(connName))
-        conn = connections[connName]
-        filename = os.path.join(config.weight_path, "{}".format(connName))
-        if iteration is not None:
-            filename += "-{:06d}".format(iteration)
-        connections_to_file(conn, filename)
-
-
-def load_theta(population_name):
-    log.info("Loading theta for population {}".format(population_name))
-    filename = os.path.join(config.weight_path, "theta_{}.npy".format(population_name))
-    return np.load(filename) * b2.volt
-
-
-def save_theta(population_names, neuron_groups, iteration=None):
-    log.info("Saving theta")
-    for pop_name in population_names:
-        filename = os.path.join(config.weight_path, "theta_{}".format(pop_name))
-        if iteration is not None:
-            filename += "-{:06d}".format(iteration)
-        np.save(filename, neuron_groups[pop_name + "e"].theta)
-
-
-def get_initial_weights(n):
-    matrices = {}
-    npr = np.random.RandomState(9728364)
-    # for neuron group A
-    # This weight is set so that an Ae spike guarantees a corresponding Ai spike
-    matrices["AeAi"] = np.eye(n["Ae"]) * 10.4
-    # This weight is set so that an Ai spike results in a drop in all the
-    # corresponding Ae membrane potentials equal to approx the difference between
-    # their threshold and reset potentials. This acts to prevent any other neurons
-    # from firing, enforcing sparsity. If less sparsity is preferred, e.g. in the
-    # case of multiple layers, then one could try reducing this weight.
-    matrices["AiAe"] = 17.0 * (1 - np.eye(n["Ae"]))
-    matrices["XeAe"] = npr.uniform(0.003, 0.303, (n["Xe"], n["Ae"]))
-    # XeAi connections not currently used but this is how they appear to be
-    # generated from inspection of pre-made weights supplied with DC15 code
-    new = np.zeros((n["Xe"], n["Ae"]))
-    n_connect = int(0.1 * n["Xe"] * n["Ae"])
-    connect = npr.choice(n["Xe"] * n["Ae"], n_connect, replace=False)
-    new.flat[connect] = npr.uniform(0.0, 0.2, n_connect)
-    matrices["XeAi"] = new
-    # for neuron group O --- TODO: refine
-    matrices["OeOi"] = np.eye(n["Oe"]) * 10.4
-    matrices["OiOe"] = 17.0 * (1 - np.eye(n["Oe"]))
-    matrices["YeOe"] = np.eye(n["Oe"]) * 10.4
-    # between neuron groups A and O --- TODO: refine
-    # matrices["AeOe"] = npr.uniform(0.003, 0.303, (n["Ae"], n["Oe"]))
-    matrices["AeOe"] = np.zeros((n["Ae"], n["Oe"])) + 0.1
-    matrices["OeAe"] = np.zeros((n["Oe"], n["Ae"])) + 0.1
-    return matrices
-
-
-def main(args):
-    if args.runname is None:
-        if args.resume:
-            print(f"Must provide runname to resume")
-            exit(2)
-        args.runname = datetime.datetime.now().replace(microsecond=0).isoformat()
-    outputpath = os.path.join(args.output, args.runname)
+def main(config):
     try:
-        os.makedirs(
-            outputpath,
-            exist_ok=(args.clobber or args.resume or args.test_mode), # Allow existence only if any of these flags are True
-        )
+        os.makedirs(config.run_path, exist_ok=(config.clobber or config.resume or config.test_mode))
     except (OSError, FileExistsError):
-        print(f"Refusing to overwrite existing output files in {outputpath}")
+        print(f"Refusing to overwrite existing output files in {config.run_path}")
         print(f"Use --clobber to force overwriting")
         exit(8)
-    suffix = ""
-    if args.test_mode:
+    if config.test_mode:
         mode = "w"
         suffix = "_test"
-    elif args.resume:
+    elif config.resume:
         mode = "a"
     else:
         mode = "w"
-    logfilename = os.path.join(outputpath, f"output{suffix}.log")
-    fh = logging.FileHandler(logfilename, mode)
-    fh.setLevel(logging.DEBUG if args.debug else logging.INFO)
+    config.logfile_name = os.path.join(config.run_path, f"output{config.suffix}.log")
+    fh = logging.FileHandler(config.logfile_name, mode)
+    fh.setLevel(logging.DEBUG if config.debug else logging.INFO)
     formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
     fh.setFormatter(formatter)
     log.addHandler(fh)
-    storefilename = os.path.join(outputpath, f"store{suffix}.h5")
-    if args.test_mode:
+    if config.test_mode:
         # TODO: MAKE THIS WORK WITH ORIGINAL DC15 WEIGHTS
-        originalstorefilename = os.path.join(outputpath, f"store.h5")
-        create_test_store(storefilename, originalstorefilename)
+        create_test_store(config.store_filename, os.path.join(config.run_path, f"store.h5"))
         mode = "a"
-    with pd.HDFStore(storefilename, mode=mode, complib="blosc", complevel=9) as store:
-        args.store = store
-        simulation(**vars(args)) # Expand the values of args in dictionary form
+    with pd.HDFStore(config.store_filename, mode=mode, complib="blosc", complevel=9) as store:
+        simulation(config, store, **config.__dict__) # Expand the values of args in dictionary form
 
 
 def simulation(
+    config,
+    store,
     test_mode=True,
     runname=None,
     num_epochs=None,
@@ -197,7 +120,6 @@ def simulation(
     feedback=False,
     profile=False,
     clock=None,
-    store=None,
     **kwargs,
 ):
     metadata = get_metadata(store)
@@ -234,19 +156,12 @@ def simulation(
     metadata["args"] = record_arguments(currentframe(), locals())
     log.info("=======================")
 
-    # load MNIST
-    training, testing = get_labeled_data(kwargs["data"])
-    config.classes = np.unique(training["y"])
-    config.num_classes = len(config.classes)
-
     # configuration
     np.random.seed(0)
     modulefilename = getframeinfo(currentframe()).filename
-    config.data_path = os.path.dirname(os.path.abspath(modulefilename))
-    config.random_weight_path = os.path.join(config.data_path, "random/")
-    runpath = os.path.join("runs", runname)
-    config.weight_path = os.path.join(runpath, "weights/")
+
     os.makedirs(config.weight_path, exist_ok=True)
+    os.makedirs(config.output_path, exist_ok=True)
     if test_mode:
         log.info("Testing run {}".format(runname))
     elif resume:
@@ -254,12 +169,9 @@ def simulation(
     else:
         log.info("Training run {}".format(runname))
 
-    if test_mode:
-        config.output_path = os.path.join(runpath, "output_test/")
-    else:
-        config.output_path = os.path.join(runpath, "output/")
-    os.makedirs(config.output_path, exist_ok=True)
-
+    training, testing = get_labeled_data(config.data_path)
+    classes = np.unique(training["y"])
+    num_classes = len(classes)
     if test_mode:
         data = testing
     else:
@@ -291,10 +203,10 @@ def simulation(
     n_neurons = {
         "Ae": size,
         "Ai": size,
-        "Oe": config.num_classes,
-        "Oi": config.num_classes,
+        "Oe": num_classes,
+        "Oi": num_classes,
         "Xe": n_input,
-        "Ye": config.num_classes,
+        "Ye": num_classes,
     }
     metadata["n_neurons"] = n_neurons
 
@@ -304,14 +216,14 @@ def simulation(
     runtime = num_examples * total_example_time
     metadata["total_example_time"] = total_example_time
 
-    input_population_names = ["X"]
-    population_names = ["A"]
-    connection_names = ["XA"]
+    config.input_population_names = ["X"]
+    config.population_names = ["A"]
+    config.connection_names = ["XA"]
     config.save_conns = ["XeAe"]
     config.plot_conns = ["XeAe"]
-    forward_conntype_names = ["ee"]
-    recurrent_conntype_names = ["ei_rec", "ie_rec"]
-    stdp_conn_names = ["XeAe"]
+    config.forward_conntype_names = ["ee"]
+    config.recurrent_conntype_names = ["ei_rec", "ie_rec"]
+    config.stdp_conn_names = ["XeAe"]
 
     # TODO: add --dc15 option
     total_weight = {}
@@ -323,20 +235,20 @@ def simulation(
     theta_init = {}
 
     if supervised:
-        input_population_names += ["Y"]
-        population_names += ["O"]
-        connection_names += ["YO", "AO"]
+        config.input_population_names += ["Y"]
+        config.population_names += ["O"]
+        config.connection_names += ["YO", "AO"]
         config.save_conns += ["YeOe", "AeOe"]
         config.plot_conns += ["AeOe"]
-        stdp_conn_names += ["AeOe"]
+        config.stdp_conn_names += ["AeOe"]
         total_weight["AeOe"] = n_neurons["Ae"] / 5.0  # TODO: refine?
         theta_init["O"] = 15.0 * b2.mV
 
     if feedback:
-        connection_names += ["OA"]
+        config.connection_names += ["OA"]
         config.save_conns += ["OeAe"]
         config.plot_conns += ["OeAe"]
-        stdp_conn_names += ["OeAe"]
+        config.stdp_conn_names += ["OeAe"]
         total_weight["OeAe"] = n_neurons["Oe"] / 5.0  # TODO: refine?
 
     delay = {}  # TODO: potentially specify by connName?
@@ -366,7 +278,7 @@ def simulation(
     # -------------------------------------------------------------------------
     # create network population and recurrent connections
     # -------------------------------------------------------------------------
-    for subgroup_n, name in enumerate(population_names):
+    for subgroup_n, name in enumerate(config.population_names):
         log.info(f"Creating neuron group {name}")
         subpop_e = name + "e"
         subpop_i = name + "i"
@@ -393,7 +305,7 @@ def simulation(
         )
 
         if not random_weights:
-            theta_saved = load_theta(name)
+            theta_saved = load_theta(name, config.weight_path)
             if len(theta_saved) != n_neurons[subpop_e]:
                 raise ValueError(
                     f"Requested size of neuron population {subpop_e} "
@@ -404,7 +316,7 @@ def simulation(
         elif name in theta_init:
             neuron_groups[subpop_e].theta = theta_init[name]
 
-        for connType in recurrent_conntype_names:
+        for connType in config.recurrent_conntype_names:
             log.info(f"Creating recurrent connections for {connType}")
             preName = name + connType[0]
             postName = name + connType[1]
@@ -427,7 +339,7 @@ def simulation(
             weightMatrix = None
             if use_premade_weights:
                 try:
-                    weightMatrix = load_connections(connName, random=random_weights)
+                    weightMatrix = load_connections(connName, config.random_weight_path if random_weights else config.weight_path)
                 except FileNotFoundError:
                     log.info(
                         f"Requested premade {'random' if random_weights else ''} "
@@ -475,7 +387,7 @@ def simulation(
     # -------------------------------------------------------------------------
     # create TimedArray of rates for input labels
     # -------------------------------------------------------------------------
-    if "Y" in input_population_names:
+    if "Y" in config.input_population_names:
         input_label_rates = np.zeros(
             (n_data * n_dt_total, n_neurons["Ye"]), dtype=np.float16
         )
@@ -494,7 +406,7 @@ def simulation(
     # -------------------------------------------------------------------------
     # create input population and connections from input populations
     # -------------------------------------------------------------------------
-    for k, name in enumerate(input_population_names):
+    for k, name in enumerate(config.input_population_names):
         subpop_e = name + "e"
         # stimulus is repeated for duration of simulation
         # (i.e. if there are multiple epochs)
@@ -506,14 +418,14 @@ def simulation(
             neuron_groups[subpop_e], record=record_spikes
         )
 
-    for name in connection_names:
+    for name in config.connection_names:
         log.info(f"Creating connections between {name[0]} and {name[1]}")
-        for connType in forward_conntype_names:
+        for connType in config.forward_conntype_names:
             log.debug(f"connType {connType}")
             preName = name[0] + connType[0]
             postName = name[1] + connType[1]
             connName = preName + postName
-            stdp_on = ee_STDP_on and connName in stdp_conn_names
+            stdp_on = ee_STDP_on and connName in config.stdp_conn_names
             nu_factor = 10.0 if name in ["AO"] else None
             conn = connections[connName] = DiehlAndCookSynapses(
                 neuron_groups[preName],
@@ -532,7 +444,7 @@ def simulation(
             weightMatrix = None
             if use_premade_weights:
                 try:
-                    weightMatrix = load_connections(connName, random=random_weights)
+                    weightMatrix = load_connections(connName, config.random_weight_path if random_weights else config.weight_path)
                 except FileNotFoundError:
                     log.info(
                         f"Requested premade {'random' if random_weights else ''} "
@@ -556,7 +468,7 @@ def simulation(
         @b2.network_operation(dt=total_example_time, order=1)
         def normalize_weights(t):
             for connName in connections:
-                if connName in stdp_conn_names:
+                if connName in config.stdp_conn_names:
                     # log.debug(
                     #     "Normalizing weights for {} " "at time {}".format(connName, t)
                     # )
@@ -576,7 +488,7 @@ def simulation(
     def record_cumulative_spike_counts(t=None):
         if t is None or t > 0:
             metadata.nseen += 1
-        for name in population_names + input_population_names:
+        for name in config.population_names + config.input_population_names:
             subpop_e = name + "e"
             count = pd.DataFrame(
                 spike_monitors[subpop_e].count[:][None, :], index=[metadata.nseen]
@@ -603,7 +515,7 @@ def simulation(
         assignments_window, accuracy_window = get_windows(
             metadata.nseen, progress_assignments_window, progress_accuracy_window
         )
-        for name in population_names + input_population_names:
+        for name in config.population_names + config.input_population_names:
             log.debug(f"Progress for population {name}")
             subpop_e = name + "e"
             csc = store.select(f"cumulative_spike_counts/{subpop_e}")
@@ -628,7 +540,7 @@ def simulation(
                 plot_rates_summary(
                     store.select(f"rates/{subpop_e}"), filename=fn, label=subpop_e
                 )
-            if name in population_names:
+            if name in config.population_names:
                 if not test_mode:
                     spikecounts_past = spike_counts_from_cumulative(
                         csc,
@@ -794,7 +706,7 @@ def simulation(
     progress()
     if not test_mode:
         record_cumulative_spike_counts()
-        save_theta(population_names, neuron_groups)
+        save_theta(config.population_names, neuron_groups)
         save_connections(connections)
 
 
@@ -809,52 +721,27 @@ if __name__ == "__main__":
             "Spiking Neural Network with STDP-based learning."
         )
     )
+
     mode_group = parser.add_mutually_exclusive_group(required=True)
-    mode_group.add_argument(
-        "--test", dest="test_mode", action="store_true", help="Enable test mode"
-    )
-    mode_group.add_argument(
-        "--train", dest="test_mode", action="store_false", help="Enable train mode"
-    )
-    parser.add_argument(
-        "--runname",
-        type=str,
-        default=None,
-        help="Name of output folder, if none given defaults to date and time.",
-    )
-    parser.add_argument(
-        "--output", type=str, default="~/Data/SNN/Brian2STDPMNIST/runs/", help="Parent path for output folder"
-    )
-    parser.add_argument(
-        "--data", type=str, default="~/datasets/mnist", help="Path to store/get the MNIST .npz file."
-    )
+    mode_group.add_argument("--test", dest="test_mode", action="store_true", help="Enable test mode")
+    mode_group.add_argument("--train", dest="test_mode", action="store_false", help="Enable train mode")
+
+    parser.add_argument("--runname", type=str, default=None, help="Name of output folder, if none given defaults to date and time.")
+    parser.add_argument("--runpath", dest='run_path_parent', type=str, default="~/Data/SNN/Brian2STDPMNIST/runs/", help="Parent path for runs folder.")
+    parser.add_argument("--datapath", dest="data_path", type=str, default="~/datasets/mnist", help="Path to store/get the MNIST .npz file.")
+
     debug_group = parser.add_mutually_exclusive_group(required=False)
-    debug_group.add_argument(
-        "--debug",
-        dest="debug",
-        action="store_true",
-        default=argparse.SUPPRESS,  # default to debug=True
-        help="Include debug output from log file",
-    )
-    debug_group.add_argument(
-        "--no-debug",
-        dest="debug",
-        action="store_false",
-        help="Omit debug output in log file",
-    )
-    parser.add_argument(
-        "--clobber",
-        action="store_true",
-        help="Force overwrite of files in existing run folder",
-    )
+    # argparse.SUPPRESS makes debug default to True
+    debug_group.add_argument("--debug", dest="debug", action="store_true", default=argparse.SUPPRESS,  help="Include debug output from log file")
+    debug_group.add_argument("--no-debug", dest="debug", action="store_false", help="Omit debug output in log file")
+
+    parser.add_argument( "--clobber", action="store_true", help="Force overwrite of files in existing run folder")
     parser.add_argument("--num_epochs", type=float, default=None)
     parser.add_argument("--progress_interval", type=int, default=None)
     parser.add_argument("--assignments_window", type=int, default=None)
     parser.add_argument("--accuracy_window", type=int, default=None)
     parser.add_argument("--record_spikes", action="store_true")
-    parser.add_argument(
-        "--monitoring",
-        action="store_true",
+    parser.add_argument( "--monitoring", action="store_true",
         help=(
             "Turn on detailed monitoring of spikes and states. "
             "These are pickled and saved each progress interval. "
@@ -863,20 +750,12 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument("--permute_data", action="store_true")
-    parser.add_argument(
-        "--size",
-        type=int,
-        default=400,
+    parser.add_argument( "--size", type=int, default=400,
         help="""Number of neurons in the computational layer.
                 Currently this must be a square number.""",
     )
-    parser.add_argument(
-        "--resume", action="store_true", help="Continue on from existing run"
-    )
-    parser.add_argument(
-        "--stdp_rule",
-        type=str,
-        default="original",
+    parser.add_argument( "--resume", action="store_true", help="Continue on from existing run")
+    parser.add_argument( "--stdp_rule", type=str, default="original",
         choices=[
             "original",
             "minimal-triplet",
@@ -886,20 +765,14 @@ if __name__ == "__main__":
             "symmetric",
         ],
     )
-    parser.add_argument(
-        "--custom_namespace",
-        "--synapse_namespace",
-        type=str,
-        default="{}",
+    parser.add_argument( "--custom_namespace", "--synapse_namespace", type=str, default="{}",
         help=(
             "Customise the synapse namespace. "
             "This should be given as a dictionary, surrounded by quotes, "
-            'for example: \'{"tar": 0.1, "mu": 2.0}\'.'
+            'for example: \'{"tar": 0.1, "mu": 2.0}\'.' # TODO: Check if this should be 'tau'?
         ),
     )
-    parser.add_argument(
-        "--total_input_weight",
-        type=float,
+    parser.add_argument( "--total_input_weight", type=float,
         help=(
             "The total weight of input synapses into each neuron, "
             "enforced by normalisation after each example. "
@@ -908,54 +781,16 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument("--tc_theta", type=float, help="The theta time constant")
-    parser.add_argument(
-        "--timer",
-        type=float,
-        help="Modify dtimer/dt for the 'spike suppression timer'. Can be zero to disable timer.",
-    )
+    parser.add_argument("--timer", type=float, help="Modify dtimer/dt for the 'spike suppression timer'. Can be zero to disable timer.")
     parser.add_argument("--use_premade_weights", action="store_true")
-    parser.add_argument(
-        "--supervised", action="store_true", help="Enable supervised training"
-    )
-    parser.add_argument(
-        "--feedback", action="store_true", help="Enable feedback in supervised training"
-    )
+    parser.add_argument("--supervised", action="store_true", help="Enable supervised training")
+    parser.add_argument("--feedback", action="store_true", help="Enable feedback in supervised training")
     parser.add_argument("--profile", action="store_true")
-    parser.add_argument(
-        "--clock",
-        type=float,
-        help="The simulation resolution in milliseconds (default 0.5)",
-    )
+    parser.add_argument("--clock", type=float, help="The simulation resolution in milliseconds (default 0.5)")
 
-    parser.add_argument(
-        "--dc15",
-        action="store_true",
-        help="Set all options to reproduce DC15 as closely as possible",
-    )
+    parser.add_argument("--dc15", action="store_true", help="Set all options to reproduce DC15 as closely as possible")
 
     args = parser.parse_args()
+    config = Config(args)
 
-    custom_namespace_arg = json.loads(args.custom_namespace.replace("'", '"'))
-
-    args.data = os.path.expanduser(args.data)
-    args.output = os.path.expanduser(args.output)
-
-    if args.monitoring:
-        args.record_spikes = True
-
-    if args.feedback:
-        args.supervised = True
-
-    if args.dc15:
-        dc15_options = dict(
-            permute_data=False,
-            stdp_rule="original",
-            timer=10.0,
-            tc_theta=1.0e7,
-            total_input_weight=78.0,
-            use_premade_weights=True,
-        )
-        for k, v in dc15_options.items():
-            setattr(args, k, v)
-
-    sys.exit(main(args))
+    sys.exit(main(config))
