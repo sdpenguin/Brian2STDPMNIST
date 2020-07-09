@@ -63,8 +63,6 @@ class Config(object):
     store = None
     custom_namespace_arg = None
     logfile_name = None
-    mode = None # Mode to load the store
-    suffix = ''
     store_filename = None
     # Custom configuration Parameters
     classes = None # MNIST data classes

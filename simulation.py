@@ -82,7 +82,7 @@ def main(config):
         mode = "a"
     else:
         mode = "w"
-    config.logfile_name = os.path.join(config.run_path, f"output{config.suffix}.log")
+    config.logfile_name = os.path.join(config.run_path, f"output{suffix}.log")
     fh = logging.FileHandler(config.logfile_name, mode)
     fh.setLevel(logging.DEBUG if config.debug else logging.INFO)
     formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
