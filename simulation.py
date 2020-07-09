@@ -60,7 +60,6 @@ from utilities import (
     plot_accuracy,
     connections_to_pandas,
     plot_weights,
-    record_arguments,
     create_test_store,
 )
 
@@ -92,6 +91,8 @@ def main(config):
     fh.setFormatter(formatter)
     log.addHandler(fh)
     store_filename = os.path.join(config.run_path, f"store{suffix}.h5")
+    os.makedirs(config.weight_path, exist_ok=True)
+    os.makedirs(config.output_path, exist_ok=True)
     if config.test_mode:
         # TODO: MAKE THIS WORK WITH ORIGINAL DC15 WEIGHTS
         create_test_store(store_filename, os.path.join(config.run_path, f"store.h5"))
@@ -124,48 +125,24 @@ def simulation(
     feedback=False,
     profile=False,
     clock=None,
+    random_weights=False,
+    ee_STDP_on=False,
     **kwargs,
 ):
-    metadata = store.root._v_attrs
+    np.random.seed(0) # For consistency
+
+    #### Initialise Metadata ####
+    metadata = store.root._v_attrs # Access the store metadata
+    for x in config.__dict__: setattr(metadata, x, getattr(config, x))
     if not resume:
         metadata.nseen = 0
         metadata.nprogress = 0
 
-    if test_mode:
-        random_weights = False
-        use_premade_weights = True
-        ee_STDP_on = False
-        if num_epochs is None:
-            num_epochs = 1
-        if progress_interval is None:
-            progress_interval = 1000
-        if progress_assignments_window is None:
-            progress_assignments_window = 0
-        if progress_accuracy_window is None:
-            progress_accuracy_window = 1000000
-    else:
-        random_weights = not resume
-        ee_STDP_on = True
-        if num_epochs is None:
-            num_epochs = 3
-        if progress_interval is None:
-            progress_interval = 1000
-        if progress_assignments_window is None:
-            progress_assignments_window = 1000
-        if progress_accuracy_window is None:
-            progress_accuracy_window = 1000
-
+    #### Log Configuration ####
     log.info("Brian2STDPMNIST/simulation.py")
     log.info("Arguments =============")
-    metadata["args"] = record_arguments(currentframe(), locals())
+    log.info("{} : {}".format(key, getattr(metadata, key)) for key in metadata)
     log.info("=======================")
-
-    # configuration
-    np.random.seed(0)
-    modulefilename = getframeinfo(currentframe()).filename
-
-    os.makedirs(config.weight_path, exist_ok=True)
-    os.makedirs(config.output_path, exist_ok=True)
     if test_mode:
         log.info("Testing run {}".format(runname))
     elif resume:
@@ -173,6 +150,7 @@ def simulation(
     else:
         log.info("Training run {}".format(runname))
 
+    #### Get MNIST Data ####
     training, testing = get_labeled_data(config.data_path)
     classes = np.unique(training["y"])
     num_classes = len(classes)
@@ -197,9 +175,7 @@ def simulation(
     # -------------------------------------------------------------------------
     # set parameters and equations
     # -------------------------------------------------------------------------
-    # log.info('Original defaultclock.dt = {}'.format(str(b2.defaultclock.dt)))
-    if clock is None:
-        clock = 0.5
+    log.info('Original defaultclock.dt = {}'.format(str(b2.defaultclock.dt)))
     b2.defaultclock.dt = clock * b2.ms
     metadata["dt"] = b2.defaultclock.dt
     log.info("defaultclock.dt = {}".format(str(b2.defaultclock.dt)))
@@ -508,6 +484,7 @@ def simulation(
     network_operations.append(record_cumulative_spike_counts_net_op)
 
     def progress():
+        ''' Logs the progress. '''
         log.debug("Starting progress")
         starttime = time.process_time()
         labels = get_labels(data)
@@ -586,16 +563,14 @@ def simulation(
                     )
 
                     log.info(accuracy_msg.format(subpop_e, *accuracy.values.flat))
-                    fn = os.path.join(
-                        config.output_path, "accuracy-{}.pdf".format(subpop_e)
-                    )
-                    plot_accuracy(store.select(f"accuracy/{subpop_e}"), filename=fn)
-                    fn = os.path.join(
-                        config.output_path, "spikerates-{}.pdf".format(subpop_e)
-                    )
+                    plot_accuracy(
+                        store.select(f"accuracy/{subpop_e}"),
+                        filename=os.path.join(config.output_path,
+                        "accuracy-{}.pdf".format(subpop_e)
+                    ))
                     plot_quantity(
                         spikerates,
-                        filename=fn,
+                        filename=os.path.join(config.output_path, "spikerates-{}.pdf".format(subpop_e)),
                         label=f"spike rate {subpop_e}",
                         nseen=metadata.nseen,
                     )
@@ -615,6 +590,7 @@ def simulation(
                     store.select(f"theta/{subpop_e}"), filename=fn, label=subpop_e
                 )
         if not test_mode or metadata.nseen == 0:
+            ''' Save connection weights. '''
             for conn in config.save_conns:
                 log.info(f"Saving connection {conn}")
                 conn_df = connections_to_pandas(connections[conn], metadata.nseen)
@@ -665,9 +641,7 @@ def simulation(
                     ) as f:
                         pickle.dump(states, f)
 
-        log.debug(
-            "progress took {:.3f} seconds".format(time.process_time() - starttime)
-        )
+        log.debug("progress() took {:.3f} seconds".format(time.process_time() - starttime))
 
     if progress_interval > 0:
 
@@ -741,7 +715,12 @@ if __name__ == "__main__":
 
     parser.add_argument( "--clobber", action="store_true", help="Force overwrite of files in existing run folder")
     parser.add_argument("--num_epochs", type=float, default=None)
-    parser.add_argument("--progress_interval", type=int, default=None)
+    parser.add_argument("--progress_interval", type=int, default=None,
+        help=(
+            "The number of examples after which to run the progress() function."
+            "This function saves parameters to the store file and logs progress."
+        ), # The interval at which to save progress
+    )
     parser.add_argument("--assignments_window", type=int, default=None)
     parser.add_argument("--accuracy_window", type=int, default=None)
     parser.add_argument("--record_spikes", action="store_true")

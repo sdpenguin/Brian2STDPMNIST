@@ -38,14 +38,14 @@ class Config(object):
     debug = None
     clobber = None
     num_epochs = None
-    progress_interval = None
+    progress_interval = None # The interval at which to run the progress() function
     progress_assignments_window = None # assignments_window
     progress_accuracy_window = None # accuracy_window
     record_spikes = None
     monitoring = None
     permute_data = None # Randomly shuffle the training or testing data
     size = None
-    resume = None
+    resume = None # Resume a previous run
     stdp_rule = None
     custom_namespace = ""
     total_input_weight = None
@@ -77,6 +77,8 @@ class Config(object):
     forward_conntype_names = None
     recurrent_conntype_names = None
     stdp_conn_names = None
+    random_weights = None
+    ee_STDP_on = None
 
 
     def __init__(self, passed_args=None):
@@ -135,6 +137,34 @@ class Config(object):
         self.random_weight_path = os.path.join(self.data_path, "random/")
         self.output_path = os.path.join(self.run_path, "output{}".format('_test' if self.test_mode else ''))
         self.weight_path = os.path.join(self.run_path, "weights/")
+
+        # Configure test and training dependent parameters
+        if self.test_mode:
+            self.random_weights = False
+            self.use_premade_weights = True
+            self.ee_STDP_on = False
+            if self.num_epochs is None:
+                self.num_epochs = 1
+            if self.progress_interval is None:
+                self.progress_interval = 1000
+            if self.progress_assignments_window is None:
+                self.progress_assignments_window = 0
+            if self.progress_accuracy_window is None:
+                self.progress_accuracy_window = 1000000
+        else:
+            self.random_weights = not self.resume # Initialise with random weights if running for the first time in test mode
+            self.ee_STDP_on = True
+            if self.num_epochs is None:
+                self.num_epochs = 3
+            if self.progress_interval is None:
+                self.progress_interval = 1000
+            if self.progress_assignments_window is None:
+                self.progress_assignments_window = 1000
+            if self.progress_accuracy_window is None:
+                self.progress_accuracy_window = 1000
+
+        if self.clock is None:
+            self.clock = 0.5
 
 
 #### Load Numpy Data ####
@@ -732,19 +762,6 @@ def add_colorbar(im, aspect=20, pad_fraction=0.5, **kwargs):
     cax = divider.append_axes("right", size=width, pad=pad)
     plt.sca(current_ax)
     return im.axes.figure.colorbar(im, cax=cax, **kwargs)
-
-
-def record_arguments(frame, values):
-    ''' Get a dictionary containing current arguments. '''
-    args, _, _, _ = getargvalues(frame)
-    argdict = {}
-    for a in args:
-        if a == 'store' or 'config':
-            continue
-        argdict[a] = values[a]
-    for a, v in argdict.items():
-        log.info(f"{a}: {v}")
-    return argdict
 
 
 def create_test_store(store_file_name, original_store_file_name):
