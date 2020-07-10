@@ -43,8 +43,8 @@ class DiehlAndCookBaseNeuronGroup(b2.NeuronGroup):
         self.N = N
         self.create_model(self.eqns, self.replacements)
         self.update_model()
-        self.update_namespace(custom_namespace)
         self.namespace = {**self.base_namespace_values, **self.namespace_values}
+        self.update_namespace(custom_namespace)
         super().__init__(
             self.N,
             model=self.model,
