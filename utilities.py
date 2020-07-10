@@ -30,80 +30,78 @@ class Config(object):
     ''' Configuration parameters for the run.
         Essentially a dictionary that allows attribute access, with autocompletion. '''
 
-    # Can be at initialisation:
-    test_mode = None
+    # User defined
+    resume = None # Resume a previous run
     runname = None
     run_path_parent = None
     data_path = None
-    debug = None
-    clobber = None
-    num_epochs = None
-    progress_interval = None # The interval at which to run the progress() function
-    progress_assignments_window = None # Number of training examples?
-    progress_accuracy_window = None # Number of testing examples?
-    record_spikes = None
-    monitoring = None
-    permute_data = None # Randomly shuffle the training or testing data
-    size = 400 # Requested size of the neuron population (hidden)
-    resume = None # Resume a previous run
-    stdp_rule = None
-    synapse_namespace = None
-    total_input_weight = None
-    tc_theta = None
-    use_premade_weights = None
-    supervised = None
-    feedback = None
-    profile = None
-    clock = None
-    dc15 = None
-    # Dynamically defined during run:
-    run_path = None
-    output_path = None # Location to store output
-    timer = None
-    store = None
-    logfile_name = None
-    # Custom configuration Parameters
-    classes = None # MNIST data classes
-    num_classes = None # Number of data classes
     random_weight_path = None # Location to store random data
-    results_path = None # Path to store results
-    random_weights = None
-    ee_STDP_on = None
-    # Connections
-    input_population_names = ["X"]
-    population_names = ["A"]
-    connection_names = ["XA"]
+    clobber = None
+    debug = False
+    logfile_name = None
+    monitoring = False
+    test_mode = None
+    feedback = False
+    supervised = False
+    profile = None
+    # Logging:
     save_conns = ["XeAe"] # Connections to save
     plot_conns = ["XeAe"] # Connections to plot
-    forward_conntype_names = ["ee"]
-    recurrent_conntype_names = ["ei_rec", "ie_rec"]
-    stdp_conn_names = ["XeAe"]
-    # Times
-    single_example_time = 0.35 * b2.second # Time to simulate a single example
-    resting_time = 0.15 * b2.second # Time to wait in between simulations
-    total_example_time = None # Total time for an example
-    runtime = None
-    input_dt = 50 * b2.ms
-    n_dt_example = None # Number of dt in an example
-    # Data parameters
-    num_classes = None
-    n_input = None # Shape of the input
-    n_data = None # Number of data points
-    n_dt_rest = None
-    n_dt_total = None
-    num_examples = None # Number of examples to train or test on (n_data*num_epochs)
-    # Simulation Parameters
-    n_neurons = {}
+    # Meta parameters
+    num_epochs = None
+    # Neuron parameters
+    latent_dim = 400 # Size of the neuron population (hidden)
+    theta_init = {} # O will be initialised to 15mV for supervised training, otherwise nothing
+    # Synapse parameters
     delay = {
         "ee" : (0 * b2.ms, 10 * b2.ms),
         "ei" : (0 * b2.ms, 5 * b2.ms),
         "ei_rec" : (0 * b2.ms, 0 * b2.ms),
         "ie_rec" : (0 * b2.ms, 0 * b2.ms)
     }
+    stdp_rule = None
+    synapse_namespace = None
+    total_input_weight = 78.0
+    use_premade_weights = True
+    ee_STDP_on = None
+    input_population_names = ["X"]
+    population_names = ["A"]
+    connection_names = ["XA"]
+    forward_conntype_names = ["ee"]
+    recurrent_conntype_names = ["ei_rec", "ie_rec"]
+    stdp_conn_names = ["XeAe"]
     total_weight = {}
-    theta_init = {}
     input_intensity = 2.0
     input_label_intensity = None
+    # Times
+    clock = 0.5
+    timer = 10.0
+    single_example_time = 0.35 * b2.second # Time to simulate a single example
+    resting_time = 0.15 * b2.second # Time to wait in between simulations
+    runtime = None
+    input_dt = 50 * b2.ms
+    n_dt_example = None # Number of dt in an example
+    # Data parameters
+    permute_data = False # Randomly shuffle the training or testing data
+    classes = None # MNIST data classes
+    num_classes = None
+    n_input = None # Shape of the input
+    n_data = None # Number of data points
+    n_dt_rest = None
+    n_dt_total = None
+    num_examples = None # Number of examples to train or test on (n_data*num_epochs)
+    # Other
+    # TODO: Other defaults hidden in the main file
+    # TODO: Initialisation parameters for the weights
+
+    neuron_namespaces = {
+        "A" : {"tc_theta" : 1.0e7 * b2.ms},
+        "O" : {"tc_theta" : 1e6 * b2.ms}
+    }
+    all_neuron_params = {
+        "A" : {"const_theta" : False},
+        "O" : {"const_theta" : False}
+    }
 
     def __init__(self, passed_args=None):
         ''' Initialise the configuration object with properties.
@@ -111,9 +109,6 @@ class Config(object):
             - passed_args (dict)
         '''
         self.update(passed_args)
-
-    # def __dir__(self): # Enable autocompletion for attributes
-    #     return super().__dir__() + [str(k) for k in self.keys()]
 
     def __str__(self):
         ''' Print the attributes as a dictionary when printed. '''
@@ -125,7 +120,10 @@ class Config(object):
             - passed_args (dict)
         '''
         for key in vars(passed_args):
-            setattr(self, key, getattr(passed_args, key))
+            if getattr(passed_args, key) is None:
+                continue
+            else:
+                setattr(self, key, getattr(passed_args, key))
         self.sanitise_args()
 
     def sanitise_args(self):
@@ -133,19 +131,7 @@ class Config(object):
             You must run this manually currently.
             TODO: Find a method for automatically updating this whenever
             relevant parameters are changed. '''
-        if self.monitoring:
-            self.record_spikes = True
-        if self.feedback:
-            self.supervised = True
         self.custom_namespace = json.loads(self.custom_namespace.replace("'", '"'))
-        # The dc15 arg overrides other arguments
-        if self.dc15:
-            self.permute_data = False
-            self.stdp_rule = "original"
-            self.timer = 10.0
-            self.tc_theta = 1.0e7
-            self.total_input_weight = 78.0
-            self.use_premade_weights = True
         if self.runname is None: # Note - this will not run the second time
             if self.resume:
                 print(f"Must provide runname to resume")
@@ -156,7 +142,6 @@ class Config(object):
         self.data_path = os.path.expanduser(self.data_path)
         self.run_path_parent = os.path.expanduser(self.run_path_parent)
         self.run_path = os.path.join(self.run_path_parent, self.runname)
-
         # Random weights can be fixed across multiple runs, so can be stored alongside persistent files, like the data
         self.random_weight_path = os.path.join(self.data_path, "random/")
         self.output_path = os.path.join(self.run_path, "output{}".format('_test' if self.test_mode else ''))
@@ -164,42 +149,28 @@ class Config(object):
 
         # Configure test and training dependent parameters
         if self.test_mode:
-            self.random_weights = False
             self.use_premade_weights = True
             self.ee_STDP_on = False
-            if self.num_epochs is None:
-                self.num_epochs = 1
-            if self.progress_interval is None:
-                self.progress_interval = 1000
-            if self.progress_assignments_window is None:
-                self.progress_assignments_window = 0
-            if self.progress_accuracy_window is None:
-                self.progress_accuracy_window = 1000000
+            self.num_epochs = 1
+            self.progress_interval = 1000
+            self.progress_assignments_window = 0
+            self.progress_accuracy_window = 1000000
+            self.input_label_intensity = 0.0
+            self.neuron_namespaces["O"]["tc_theta"] = 1e-5 * b2.ms # TODO: Why?
+            self.all_neuron_params["A"]["const_theta"] = True # TODO: Why?
         else:
-            self.random_weights = not self.resume # Initialise with random weights if running for the first time in test mode
             self.ee_STDP_on = True
-            if self.num_epochs is None:
-                self.num_epochs = 3
-            if self.progress_interval is None:
-                self.progress_interval = 1000
-            if self.progress_assignments_window is None:
-                self.progress_assignments_window = 1000
-            if self.progress_accuracy_window is None:
-                self.progress_accuracy_window = 1000
-
-        if self.clock is None:
-            self.clock = 0.5
+            self.num_epochs = 3
+            self.progress_interval = 1000
+            self.progress_assignments_window = 1000
+            self.progress_accuracy_window = 1000
+            self.input_label_intensity = 10.0
 
         self.total_example_time = self.single_example_time + self.resting_time # Total time for an example
         self.n_dt_example = int(round(self.single_example_time / self.input_dt))
 
         self.n_dt_rest = int(round(self.resting_time / self.input_dt))
         self.n_dt_total = int(self.n_dt_example + self.n_dt_rest)
-
-        if self.test_mode:
-            self.input_label_intensity = 0.0
-        else:
-            self.input_label_intensity = 10.0
 
     def add_data_params(self, dataset):
         ''' Update the configuration with the Dataset dependent parameters. '''
@@ -209,8 +180,8 @@ class Config(object):
         self.num_examples = dataset.num_examples
 
         self.n_neurons = {
-            "Ae": self.size,
-            "Ai": self.size,
+            "Ae": self.latent_dim,
+            "Ai": self.latent_dim,
             "Oe": self.num_classes,
             "Oi": self.num_classes,
             "Xe": self.n_input,
@@ -424,7 +395,6 @@ def load_theta(population_name, weight_path):
     filename = os.path.join(weight_path, "theta_{}.npy".format(population_name))
     return np.load(filename) * b2.volt
 
-
 def save_theta(population_names, neuron_groups, weight_path, iteration=None):
     log.info("Saving theta")
     for pop_name in population_names:
@@ -443,6 +413,28 @@ def theta_to_pandas(subpop, neuron_groups, nseen):
     t = add_nseen_index(t, nseen)
     return t
 
+def get_theta(name, config):
+    ''' Loads theta for a neuron subpopulation according to the population name.
+        Inputs:
+        name - Name of the neuron group
+        config - The config object.
+        Outputs:
+        Loaded theta values. '''
+    if config.resume or config.test_mode:
+        theta_saved = load_theta(name, config.weight_path)
+        if len(theta_saved) != config.n_neurons[name]:
+            raise ValueError(
+                f"Requested size of neuron population {name} "
+                f"({config.n_neurons[name]}) does not match size of "
+                f"saved data ({len(theta_saved)})"
+            )
+        return theta_saved
+    elif name in config.theta_init: # Initialise Theta to fresh values if necessary
+        return config.theta_init[name]
+    else:
+        return None
+
+#### Rearrange Weights ####
 
 def rearrange_weights(weights):
     n_input = weights.shape[0]
@@ -474,6 +466,7 @@ def rearrange_output_weights(weights):
         rearranged_weights[:, i * n_e_sqrt : (i + 1) * n_e_sqrt] = wk
     return rearranged_weights, n_e_sqrt, n_output
 
+#### Plotting ####
 
 def plot_weights(
     weights,

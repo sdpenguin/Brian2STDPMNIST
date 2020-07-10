@@ -61,6 +61,7 @@ from utilities import (
     connections_to_pandas,
     plot_weights,
     create_test_store,
+    get_theta
 )
 
 from neurons import DiehlAndCookExcitatoryNeuronGroup, DiehlAndCookInhibitoryNeuronGroup
@@ -143,25 +144,15 @@ def simulation(config, store):
     state_monitors = {}
     network_operations = []
 
-    for subgroup_n, name in enumerate(config.population_names):
+    for subgroup_n, name in enumerate(config.population_names): # TODO: Remove subgroup_n
         log.info(f"Creating neuron group {name}")
-        subpop_e = name + "e"
-        subpop_i = name + "i"
-        const_theta = False
-        neuron_namespace = {}
-        if name == "A" and config.tc_theta is not None:
-            neuron_namespace["tc_theta"] = config.tc_theta * b2.ms
-        if name == "O":
-            neuron_namespace["tc_theta"] = 1e6 * b2.ms
-        if config.test_mode:
-            const_theta = True
-            if name == "O":
-                # TODO: move to a config variable
-                neuron_namespace["tc_theta"] = 1e5 * b2.ms
-                const_theta = False
+        subpop_e = name + "e" # Name of excitatory subpopulation
+        subpop_i = name + "i" # Name of inhibitory subpopulation
+        neuron_namespace = config.neuron_namespaces[name]
+        neuron_params = config.all_neuron_params[name]
         nge = neuron_groups[subpop_e] = DiehlAndCookExcitatoryNeuronGroup(
             config.n_neurons[subpop_e],
-            const_theta=const_theta,
+            const_theta=neuron_params["const_theta"],
             timer=config.timer,
             custom_namespace=neuron_namespace,
         )
@@ -169,17 +160,9 @@ def simulation(config, store):
             config.n_neurons[subpop_i]
         )
 
-        if not config.random_weights:
-            theta_saved = load_theta(name, config.weight_path)
-            if len(theta_saved) != config.n_neurons[subpop_e]:
-                raise ValueError(
-                    f"Requested size of neuron population {subpop_e} "
-                    f"({config.n_neurons[subpop_e]}) does not match size of "
-                    f"saved data ({len(theta_saved)})"
-                )
-            neuron_groups[subpop_e].theta = theta_saved
-        elif name in config.theta_init:
-            neuron_groups[subpop_e].theta = config.theta_init[name]
+        new_theta = get_theta(name, config)
+        if new_theta is not None:
+            neuron_groups[subpop_e].theta = new_theta
 
         for connType in config.recurrent_conntype_names:
             log.info(f"Creating recurrent connections for {connType}")
@@ -204,10 +187,10 @@ def simulation(config, store):
             weightMatrix = None
             if config.use_premade_weights:
                 try:
-                    weightMatrix = load_connections(connName, config.random_weight_path if config.random_weights else config.weight_path)
+                    weightMatrix = load_connections(connName, config.weight_path if (config.resume or config.test_mode) else config.random_weight_path)
                 except FileNotFoundError:
                     log.info(
-                        f"Requested premade {'random' if config.random_weights else ''} "
+                        f"Requested premade {'' if (config.resume or config.test_mode) else 'random'} "
                         f"weights, but none found for {connName}"
                     )
             if weightMatrix is None:
@@ -216,8 +199,8 @@ def simulation(config, store):
             conn.w = weightMatrix.flatten()
 
         log.debug(f"Creating spike monitors for {name}")
-        spike_monitors[subpop_e] = b2.SpikeMonitor(nge, record=config.record_spikes)
-        spike_monitors[subpop_i] = b2.SpikeMonitor(ngi, record=config.record_spikes)
+        spike_monitors[subpop_e] = b2.SpikeMonitor(nge, record=config.monitoring)
+        spike_monitors[subpop_i] = b2.SpikeMonitor(ngi, record=config.monitoring)
         if config.monitoring:
             log.debug(f"Creating state monitors for {name}")
             state_monitors[subpop_e] = b2.StateMonitor(
@@ -227,7 +210,7 @@ def simulation(config, store):
                 dt=0.5 * b2.ms,
             )
 
-    if config.test_mode and config.supervised:
+    if config.test_mode and config.feedback:
         # make output neurons more sensitive
         neuron_groups["Oe"].theta = 5.0 * b2.mV  # TODO: refine
 
@@ -273,7 +256,7 @@ def simulation(config, store):
         )
         log.debug(f"Creating spike monitors for {name}")
         spike_monitors[subpop_e] = b2.SpikeMonitor(
-            neuron_groups[subpop_e], record=config.record_spikes
+            neuron_groups[subpop_e], record=config.monitoring
         )
 
     for name in config.connection_names:
@@ -302,10 +285,10 @@ def simulation(config, store):
             weightMatrix = None
             if config.use_premade_weights:
                 try:
-                    weightMatrix = load_connections(connName, config.random_weight_path if config.random_weights else config.weight_path)
+                    weightMatrix = load_connections(connName, config.weight_path if (config.resume or config.test_mode) else config.random_weight_path)
                 except FileNotFoundError:
                     log.info(
-                        f"Requested premade {'random' if config.random_weights else ''} "
+                        f"Requested premade {'' if (config.resume or config.test_mode) else 'random'} "
                         f"weights, but none found for {connName}"
                     )
             if weightMatrix is None:
@@ -596,7 +579,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--assignments_window", type=int, default=None)
     parser.add_argument("--accuracy_window", type=int, default=None)
-    parser.add_argument("--record_spikes", action="store_true")
     parser.add_argument( "--monitoring", action="store_true",
         help=(
             "Turn on detailed monitoring of spikes and states. "
