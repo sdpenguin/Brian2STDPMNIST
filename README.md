@@ -15,7 +15,7 @@ This small project is to translate Brian 1 code from Paper "Unsupervised learnin
 
 ## Training a new network:
 
-1. modify the main file "Diehl&Cook_spiking_MNIST_Brian2.py" by changing line 214 to "test_mode=False" and run the code. 
+1. modify the main file "Diehl&Cook_spiking_MNIST_Brian2.py" by changing line 179 to "test_mode=False" and run the code. 
 2. The trained weights will be stored in the folder "weights", which can be used to test the performance.
-3. In order to test your training, change line 214 back to "test_mode=True". 
+3. In order to test your training, change line 179 back to "test_mode=True". 
 4. Run the "Diehl&Cook_spiking_MNIST_Brian2.py" code to get the results. 

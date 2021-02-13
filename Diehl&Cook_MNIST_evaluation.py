@@ -13,6 +13,8 @@ import os
 import scipy 
 from struct import unpack
 from brian2 import *
+# from brian2tools import * 
+
 
 from functions.data import get_labeled_data
 

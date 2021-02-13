@@ -176,13 +176,12 @@ print('time needed to load test set:', end - start)
 #------------------------------------------------------------------------------
 # set parameters and equations
 #------------------------------------------------------------------------------
-test_mode = True # Change this to False to retrain the network
-
+test_mode =False # Change this to False to retrain the network
 np.random.seed(0)
 data_path = './' # TODO: This should be a parameter
 if test_mode:
     weight_path = data_path + 'weights/'
-    num_examples = 10000 * 1
+    num_examples = 100 * 1
     use_testing_set = True
     do_plot_performance = False
     record_spikes = True
@@ -190,7 +189,7 @@ if test_mode:
     update_interval = num_examples
 else:
     weight_path = data_path + 'random/'
-    num_examples = 60000 * 3
+    num_examples = 10 * 1
     use_testing_set = False
     do_plot_performance = True
     if num_examples <= 60000:
@@ -292,6 +291,7 @@ eqs_stdp_ee = '''
             '''
 eqs_stdp_pre_ee = 'pre = 1.; w = clip(w + nu_ee_pre * post1, 0, wmax_ee)'
 eqs_stdp_post_ee = 'post2before = post2; w = clip(w + nu_ee_post * pre * post2before, 0, wmax_ee); post1 = 1.; post2 = 1.'
+
 
 b2.ion()
 fig_num = 1
@@ -407,6 +407,7 @@ for i,name in enumerate(input_population_names):
 net.run(0*second)
 j = 0
 while j < (int(num_examples)):
+    print ('corrida Nº:', j)
     if test_mode:
         if use_testing_set:
             spike_rates = testing['x'][j%10000,:,:].reshape((n_input)) / 8. *  input_intensity
@@ -451,46 +452,46 @@ while j < (int(num_examples)):
             input_groups[name+'e'].rates = 0 * Hz
         net.run(resting_time)
         input_intensity = start_input_intensity
-        j += 1
+    j += 1
 
 
-#------------------------------------------------------------------------------
-# save results
-#------------------------------------------------------------------------------
-print('save results')
-if not test_mode:
-    save_theta()
-if not test_mode:
-    save_connections()
-else:
-    np.save(data_path + 'activity/resultPopVecs' + str(num_examples), result_monitor)
-    np.save(data_path + 'activity/inputNumbers' + str(num_examples), input_numbers)
+# #------------------------------------------------------------------------------
+# # save results
+# #------------------------------------------------------------------------------
+# print('save results')
+# if not test_mode:
+#     save_theta()
+# if not test_mode:
+#     save_connections()
+# else:
+#     np.save(data_path + 'activity/resultPopVecs' + str(num_examples), result_monitor)
+#     np.save(data_path + 'activity/inputNumbers' + str(num_examples), input_numbers)
 
 
-#------------------------------------------------------------------------------
-# plot results
-#------------------------------------------------------------------------------
-if rate_monitors:
-    b2.figure(fig_num)
-    fig_num += 1
-    for i, name in enumerate(rate_monitors):
-        b2.subplot(len(rate_monitors), 1, 1+i)
-        b2.plot(rate_monitors[name].t/b2.second, rate_monitors[name].rate, '.')
-        b2.title('Rates of population ' + name)
+# #------------------------------------------------------------------------------
+# # plot results
+# #------------------------------------------------------------------------------
+# if rate_monitors:
+#     b2.figure(fig_num)
+#     fig_num += 1
+#     for i, name in enumerate(rate_monitors):
+#         b2.subplot(len(rate_monitors), 1, 1+i)
+#         b2.plot(rate_monitors[name].t/b2.second, rate_monitors[name].rate, '.')
+#         b2.title('Rates of population ' + name)
 
-if spike_monitors:
-    b2.figure(fig_num)
-    fig_num += 1
-    for i, name in enumerate(spike_monitors):
-        b2.subplot(len(spike_monitors), 1, 1+i)
-        b2.plot(spike_monitors[name].t/b2.ms, spike_monitors[name].i, '.')
-        b2.title('Spikes of population ' + name)
+# if spike_monitors:
+#     b2.figure(fig_num)
+#     fig_num += 1
+#     for i, name in enumerate(spike_monitors):
+#         b2.subplot(len(spike_monitors), 1, 1+i)
+#         b2.plot(spike_monitors[name].t/b2.ms, spike_monitors[name].i, '.')
+#         b2.title('Spikes of population ' + name)
 
-if spike_counters:
-    b2.figure(fig_num)
-    fig_num += 1
-    b2.plot(spike_monitors['Ae'].count[:])
-    b2.title('Spike count of population Ae')
+# if spike_counters:
+#     b2.figure(fig_num)
+#     fig_num += 1
+#     b2.plot(spike_monitors['Ae'].count[:])
+#     b2.title('Spike count of population Ae')
 
 
 
@@ -503,28 +504,28 @@ plt.figure(5)
 subplot(3,1,1)
 
 # The code seems to fail at the following step (NotImplementedError: Do not know how to plot object of type <class 'brian2.core.variables.VariableView'>)
-brian_plot(connections['XeAe'].w)
-subplot(3,1,2)
+# brian_plot(connections['XeAe'].w)
+# subplot(3,1,2)
 
-brian_plot(connections['AeAi'].w)
+# brian_plot(connections['AeAi'].w)
 
-subplot(3,1,3)
+# subplot(3,1,3)
 
-brian_plot(connections['AiAe'].w)
+# brian_plot(connections['AiAe'].w)
 
 
-plt.figure(6)
+# plt.figure(6)
 
-subplot(3,1,1)
+# subplot(3,1,1)
 
-brian_plot(connections['XeAe'].delay)
-subplot(3,1,2)
+# brian_plot(connections['XeAe'].delay)
+# subplot(3,1,2)
 
-brian_plot(connections['AeAi'].delay)
+# brian_plot(connections['AeAi'].delay)
 
-subplot(3,1,3)
+# subplot(3,1,3)
 
-brian_plot(connections['AiAe'].delay)
+# brian_plot(connections['AiAe'].delay)
 
 
 b2.ioff()
