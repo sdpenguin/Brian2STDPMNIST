@@ -18,6 +18,8 @@ from brian2tools import *
 
 from functions.data import get_labeled_data
 
+dic = {}
+dic['j'] = 0
 # specify the location of the MNIST data
 MNIST_data_path = './mnist/'
 
@@ -97,6 +99,8 @@ def plot_2d_input_weights():
     weights = get_2d_input_weights()
     fig = b2.figure(fig_num, figsize = (18, 18))
     im2 = b2.imshow(weights, interpolation = "nearest", vmin = 0, vmax = wmax_ee, cmap = cmap.get_cmap('hot_r'))
+    np.save(name+str(dic['j']), weights)
+    print ('pltttt', dic['j'] )
     b2.colorbar(im2)
     b2.title('weights of connection' + name)
     fig.canvas.draw()
@@ -239,7 +243,7 @@ recurrent_conn_names = ['ei', 'ie']
 weight['ee_input'] = 78.
 delay['ee_input'] = (0*b2.ms,10*b2.ms)
 delay['ei_input'] = (0*b2.ms,5*b2.ms)
-input_intensity = 2.
+input_intensity = 4.
 start_input_intensity = input_intensity
 
 tc_pre_ee = 20*b2.ms
@@ -409,6 +413,9 @@ net.run(0*second)
 j = 0
 while j < (int(num_examples)):
     print ('corrida Nº:', j)
+    dic['j'] = j
+    if j%50==0:
+        plot_2d_input_weights()
     if test_mode:
         if use_testing_set:
             spike_rates = testing['x'][j%10000,:,:].reshape((n_input)) / 8. *  input_intensity
