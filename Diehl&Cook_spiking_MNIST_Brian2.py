@@ -21,6 +21,7 @@ from functions.data import get_labeled_data
 # specify the location of the MNIST data
 MNIST_data_path = './mnist/'
 
+#%%
 #------------------------------------------------------------------------------
 # functions
 #------------------------------------------------------------------------------
@@ -158,7 +159,7 @@ def get_new_assignments(result_monitor, input_numbers):
                 assignments[i] = j
     return assignments
 
-
+#%%
 #------------------------------------------------------------------------------
 # load MNIST
 #------------------------------------------------------------------------------
@@ -172,7 +173,7 @@ testing = get_labeled_data(MNIST_data_path + 'testing', bTrain = False)
 end = time.time()
 print('time needed to load test set:', end - start)
 
-
+#%%
 #------------------------------------------------------------------------------
 # set parameters and equations
 #------------------------------------------------------------------------------
@@ -189,7 +190,7 @@ if test_mode:
     update_interval = num_examples
 else:
     weight_path = data_path + 'random/'
-    num_examples = 10 * 1
+    num_examples = 1000 * 1
     use_testing_set = False
     do_plot_performance = True
     if num_examples <= 60000:

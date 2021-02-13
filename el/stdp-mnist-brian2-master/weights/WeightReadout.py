@@ -64,14 +64,18 @@ for name in readoutnames:
     #                     print conn
         # don't need to pass offset as arg, now we store the parent projection
         src, tgt, value = conn
-        if np.isnan(value_arr[src, tgt]):
+        src = int(src)
+        tgt = int(tgt)
+        # if np.isnan(value_arr[src, tgt]):
+        if 2>1:
             value_arr[src, tgt] = value
         else:
             value_arr[src, tgt] += value
     if (name == 'YeAe' + ending):
         values = np.asarray(value_arr)#.transpose()
-	for i in xrange(n_e):
-            print values[i,i]
+	
+        for i in range(n_e):
+                print (values[i,i])
     else:
         values = np.asarray(value_arr)
         
@@ -169,6 +173,6 @@ savefig(str(fi.number))
 
 
 
-print 'done'
+print ('done')
 
 show()

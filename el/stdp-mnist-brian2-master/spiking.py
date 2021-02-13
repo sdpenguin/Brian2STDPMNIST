@@ -259,6 +259,7 @@ input_groups['Xe'].rates = 0 * Hz
 net.run(0*second)
 j = 0
 while j < (int(num_examples)):
+    print ('manganese', j)
     if test_mode:
         rate = testing['x'][j%10000,:,:].reshape((n_input)) / 8. *  input_intensity
     else:
@@ -289,9 +290,13 @@ while j < (int(num_examples)):
 # save results
 #------------------------------------------------------------------------------
 print ('save results')
-if not test_mode:
-    save_theta()
-    save_connections()
-else:
-    np.save(data_path + 'activity/resultPopVecs' + str(num_examples), result_monitor)
-    np.save(data_path + 'activity/inputNumbers' + str(num_examples), input_numbers)
+try:
+    if not test_mode:
+        save_theta()
+        save_connections()
+    else:
+        np.save('resultPopVecs' + str(num_examples), result_monitor)
+        np.save('inputNumbers' + str(num_examples), input_numbers)
+except:
+    print ('error')
+    pass
