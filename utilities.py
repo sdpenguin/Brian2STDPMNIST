@@ -137,7 +137,7 @@ class Config(object):
                 print(f"Must provide runname to resume")
                 exit(2)
             else:
-                self.runname = datetime.datetime.now().replace(microsecond=0).isoformat()
+                self.runname = datetime.datetime.now().replace(microsecond=0).isoformat().replace(":", "_")
         #### Define directory names ####
         self.data_path = os.path.expanduser(self.data_path)
         self.run_path_parent = os.path.expanduser(self.run_path_parent)
